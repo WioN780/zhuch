@@ -87,13 +87,12 @@ func DefaultConfig() GameConfig {
 
 // Game represents a single game
 type Game struct {
-	Config          GameConfig
-	Arena           *Arena
-	Entities        []Entity
-	CollisionBuffer []CollisionPair
-	mu              sync.Mutex
-	IsActive        bool
-	CurrentTick     int
+	Config      GameConfig
+	Arena       *Arena
+	Entities    []Entity
+	mu          sync.Mutex
+	IsActive    bool
+	CurrentTick int
 }
 
 // NewGame acts as the factory for the room

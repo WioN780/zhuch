@@ -1,15 +1,92 @@
 package engine
 
 import (
-	"math"
 	"sync"
 )
 
+// Collidable defines the interface for anything that can participate in the physics engine
+type Collidable interface {
+	GetID() string
+	GetGeom() GeomObject
+
+	GetPosition() Vector2
+	SetPosition(pos Vector2)
+	GetVelocity() Vector2
+	SetVelocity(vel Vector2)
+
+	GetWeight() float64
+	IsStatic() bool
+
+	ApplyForce(force Vector2)
+
+	// Physics engine entry point
+	OnCollision(other Collidable, normal Vector2, overlap float64)
+}
+
+type MovingCollidable struct {
+	ID     string
+	Vel    Vector2
+	Object GeomObject
+	Weight float64
+}
+
+func (m *MovingCollidable) GetID() string            { return m.ID }
+func (m *MovingCollidable) GetGeom() GeomObject      { return m.Object }
+func (m *MovingCollidable) GetPosition() Vector2     { return m.Object.GetCenter() }
+func (m *MovingCollidable) SetPosition(pos Vector2)  { m.Object.SetCenter(pos) }
+func (m *MovingCollidable) GetVelocity() Vector2     { return m.Vel }
+func (m *MovingCollidable) SetVelocity(vel Vector2)  { m.Vel = vel }
+func (m *MovingCollidable) GetWeight() float64       { return m.Weight }
+func (m *MovingCollidable) IsStatic() bool           { return false }
+func (m *MovingCollidable) ApplyForce(force Vector2) { m.Vel = m.Vel.Add(force.Scale(1.0 / m.Weight)) }
+
+func (m *MovingCollidable) OnCollision(other Collidable, normal Vector2, overlap float64) {
+	// Static Resolution (The Push)
+	ratio := other.GetWeight() / (m.Weight + other.GetWeight())
+	if other.IsStatic() {
+		ratio = 1.0
+	}
+	m.Object.SetCenter(m.Object.GetCenter().Sub(normal.Scale(overlap * ratio)))
+
+	// Momentum Resolution (The Bounce)
+	relVel := other.GetVelocity().Sub(m.Vel)
+	velAlongNormal := relVel.X*normal.X + relVel.Y*normal.Y
+
+	if velAlongNormal < 0 {
+		restitution := 0.5
+		j := -(1.0 + restitution) * velAlongNormal
+		invMassSelf := 1.0 / m.Weight
+		invMassOther := 1.0 / other.GetWeight()
+		if other.IsStatic() {
+			invMassOther = 0
+		}
+
+		j /= (invMassSelf + invMassOther)
+		m.ApplyForce(normal.Scale(-j))
+	}
+}
+
+// StaticCollidable defines all the obstacles
+type StaticCollidable struct {
+	Object GeomObject
+}
+
+func (s *StaticCollidable) GetID() string                                                 { return "static_" + s.Object.GetCenter().String() }
+func (s *StaticCollidable) GetGeom() GeomObject                                           { return s.Object }
+func (s *StaticCollidable) GetPosition() Vector2                                          { return s.Object.GetCenter() }
+func (s *StaticCollidable) SetPosition(pos Vector2)                                       { s.Object.SetCenter(pos) }
+func (s *StaticCollidable) GetVelocity() Vector2                                          { return Vector2{0, 0} }
+func (s *StaticCollidable) SetVelocity(vel Vector2)                                       {}
+func (s *StaticCollidable) GetWeight() float64                                            { return 1e18 }
+func (s *StaticCollidable) IsStatic() bool                                                { return true }
+func (s *StaticCollidable) ApplyForce(force Vector2)                                      {}
+func (s *StaticCollidable) OnCollision(other Collidable, normal Vector2, overlap float64) {}
+
+// Grid for collision computation
 type GridCoord struct {
 	X, Y int
 }
 
-// getCoord converts a world position into a grid cell ID
 func getCoord(pos Vector2, cellSize float64) GridCoord {
 	return GridCoord{
 		X: int(pos.X / cellSize),
@@ -17,194 +94,54 @@ func getCoord(pos Vector2, cellSize float64) GridCoord {
 	}
 }
 
-type CollisionPair struct {
-	A, B Entity
-}
-
-// This handles static arena walls and entity collisions
+// CheckAllCollisions just triggers interactions between nearby objects
 func (g *Game) CheckAllCollisions(arena *Arena) {
-	grid := make(map[GridCoord][]Entity)
-
+	var allCollidables []Collidable
 	for _, e := range g.Entities {
-		resolveEntityVsArena(e, arena)
+		allCollidables = append(allCollidables, e.(Collidable))
+	}
+	for _, obs := range arena.Obstacles {
+		allCollidables = append(allCollidables, &StaticCollidable{Object: obs})
+	}
 
-		coord := getCoord(e.GetPosition(), g.Config.CellSize)
-		grid[coord] = append(grid[coord], e)
+	grid := make(map[GridCoord][]Collidable)
+	for _, c := range allCollidables {
+		coord := getCoord(c.GetPosition(), g.Config.CellSize)
+		grid[coord] = append(grid[coord], c)
 	}
 
 	var wg sync.WaitGroup
-	var pairsMu sync.Mutex
-	allPairs := make([]CollisionPair, 0)
-
 	offsets := []GridCoord{
 		{0, 0}, {-1, 0}, {1, 0}, {0, -1}, {0, 1},
 		{-1, -1}, {-1, 1}, {1, -1}, {1, 1},
 	}
 
-	for i := 0; i < len(g.Entities); i++ {
+	for i := 0; i < len(allCollidables); i++ {
+		c1 := allCollidables[i]
+		if c1.IsStatic() {
+			continue
+		}
+
 		wg.Add(1)
-
-		// Spawn a routine for EVERY entity
-		go func(e1 Entity) {
+		go func(obj1 Collidable) {
 			defer wg.Done()
-			localPairs := make([]CollisionPair, 0)
-
-			baseCoord := getCoord(e1.GetPosition(), g.Config.CellSize)
+			baseCoord := getCoord(obj1.GetPosition(), g.Config.CellSize)
 
 			for _, offset := range offsets {
 				checkCoord := GridCoord{X: baseCoord.X + offset.X, Y: baseCoord.Y + offset.Y}
 
-				// Maps are safe for concurrent READS in Go
-				if cellEntities, exists := grid[checkCoord]; exists {
-					for _, e2 := range cellEntities {
-						// no collision pairs repeats
-						if e1.GetID() < e2.GetID() {
-							if checkCollision(e1, e2) {
-								localPairs = append(localPairs, CollisionPair{A: e1, B: e2})
+				if cellObjects, exists := grid[checkCoord]; exists {
+					for _, obj2 := range cellObjects {
+						if obj1.GetID() < obj2.GetID() {
+							if hit, normal, overlap := obj1.GetGeom().Intersects(obj2.GetGeom()); hit {
+								obj1.OnCollision(obj2, normal, overlap)
+								obj2.OnCollision(obj1, normal.Scale(-1), overlap)
 							}
 						}
 					}
 				}
 			}
-
-			if len(localPairs) > 0 {
-				pairsMu.Lock()
-				allPairs = append(allPairs, localPairs...)
-				pairsMu.Unlock()
-			}
-		}(g.Entities[i])
+		}(c1)
 	}
-
-	// waiting for the routines to complete
 	wg.Wait()
-
-	for _, pair := range allPairs {
-		resolveCollision(pair.A, pair.B)
-	}
-}
-
-// ---------------------------------------------------------
-// COLLISION MATH HELPERS
-// ---------------------------------------------------------
-
-func clamp(val, min, max float64) float64 {
-	if val < min {
-		return min
-	}
-	if val > max {
-		return max
-	}
-	return val
-}
-
-func resolveEntityVsArena(entity Entity, arena *Arena) {
-	circ, isCirc := entity.GetObject().(*Circle)
-	if !isCirc {
-		return
-	}
-
-	for _, obs := range arena.Obstacles {
-		switch shape := obs.(type) {
-		case *Square:
-			halfSide := shape.SideLength / 2
-			minX, maxX := shape.Center.X-halfSide, shape.Center.X+halfSide
-			minY, maxY := shape.Center.Y-halfSide, shape.Center.Y+halfSide
-
-			closestX := clamp(circ.Center.X, minX, maxX)
-			closestY := clamp(circ.Center.Y, minY, maxY)
-
-			dx := circ.Center.X - closestX
-			dy := circ.Center.Y - closestY
-			distanceSquared := dx*dx + dy*dy
-
-			if distanceSquared < circ.Radius*circ.Radius {
-				distance := math.Sqrt(distanceSquared)
-				if distance == 0 {
-					entity.SetPosition(Vector2{X: maxX + circ.Radius, Y: circ.Center.Y})
-					continue
-				}
-
-				overlap := circ.Radius - distance
-				nx := dx / distance
-				ny := dy / distance
-
-				pos := entity.GetPosition()
-				entity.SetPosition(Vector2{
-					X: pos.X + (nx * overlap),
-					Y: pos.Y + (ny * overlap),
-				})
-			}
-		}
-	}
-}
-
-func checkCollision(a, b Entity) bool {
-	// check if either center is contained within the other object's geometry
-	return a.GetObject().Contains(b.GetPosition()) || b.GetObject().Contains(a.GetPosition())
-}
-
-func resolveCollision(a, b Entity) {
-	posA := a.GetPosition()
-	posB := b.GetPosition()
-
-	// Get dimensions for physical response
-	dimA := getShapeDimension(a.GetObject())
-	dimB := getShapeDimension(b.GetObject())
-
-	dx := posB.X - posA.X
-	dy := posB.Y - posA.Y
-	distance := math.Sqrt(dx*dx + dy*dy)
-
-	if distance == 0 {
-		a.SetPosition(Vector2{X: posA.X + 0.1, Y: posA.Y})
-		b.SetPosition(Vector2{X: posB.X - 0.1, Y: posB.Y})
-		return
-	}
-
-	overlap := (dimA + dimB) - distance
-	if overlap < 0 {
-		overlap = 0
-	}
-
-	nx := dx / distance
-	ny := dy / distance
-
-	// Static resolution
-	push := Vector2{X: nx * (overlap / 2), Y: ny * (overlap / 2)}
-	a.SetPosition(Vector2{X: posA.X - push.X, Y: posA.Y - push.Y})
-	b.SetPosition(Vector2{X: posB.X + push.X, Y: posB.Y + push.Y})
-
-	// Relative velocity
-	relVel := b.GetVelocity().Sub(a.GetVelocity())
-
-	// Velocity along the normal
-	velAlongNormal := relVel.X*nx + relVel.Y*ny
-
-	// Do not resolve if velocities are separating
-	if velAlongNormal < 0 {
-		j := -(1.5) * velAlongNormal // 0.5 bounciness
-		j /= (1 / a.GetWeight()) + (1 / b.GetWeight())
-
-		impulse := Vector2{X: nx * j, Y: ny * j}
-		a.ApplyForce(impulse.Scale(-1 / a.GetWeight()))
-		b.ApplyForce(impulse.Scale(1 / b.GetWeight()))
-	}
-
-	a.OnCollision(b)
-	b.OnCollision(a)
-}
-
-func getShapeDimension(obj GeomObject) float64 {
-	switch shape := obj.(type) {
-	case *Circle:
-		return shape.Radius
-	case *Square:
-		return shape.SideLength / 2
-	case *Triangle:
-		return shape.Size / 2
-	case *Pentagon:
-		return shape.Size / 2
-	default:
-		return 0
-	}
 }
