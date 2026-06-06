@@ -77,7 +77,8 @@ export class Renderer {
 
     if (dt > 0) {
       const instantTPS = 1 / dt;
-      this.currentTPS = (this.currentTPS * this.tpsFilter) + (instantTPS * (1 - this.tpsFilter));
+      this.currentTPS =
+        this.currentTPS * this.tpsFilter + instantTPS * (1 - this.tpsFilter);
     }
 
     this.entityManager.updateEntities(entities);
@@ -99,16 +100,19 @@ export class Renderer {
   updateMetricsUI(metrics) {
     const el = document.getElementById("debug-metrics");
     if (!el) return;
-    
-    const count = metrics.entity_count !== undefined ? metrics.entity_count : metrics.EntityCount;
+
+    const count =
+      metrics.entity_count !== undefined
+        ? metrics.entity_count
+        : metrics.EntityCount;
     const tps = Math.round(this.currentTPS);
-    
+
     el.innerText = `TPS: ${tps} | Entities: ${count}`;
   }
 
-  update(deltaTime) {
+  update(deltaTime, deltaMS) {
     this.camera.update(deltaTime);
-    this.entityManager.update(deltaTime);
+    this.entityManager.update(deltaTime, deltaMS);
 
     // Update debug coordinates UI
     const playerTank = this.entityManager.getEntity(this.playerID);

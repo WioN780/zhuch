@@ -57,8 +57,10 @@ export class EntityManager {
   }
 
   getEntityType(data) {
-    if (data.orientation !== undefined || data.Orientation !== undefined) return "tank";
-    if (data.owner_id !== undefined || data.OwnerID !== undefined) return "bullet";
+    if (data.orientation !== undefined || data.Orientation !== undefined)
+      return "tank";
+    if (data.owner_id !== undefined || data.OwnerID !== undefined)
+      return "bullet";
     return "food";
   }
 
@@ -75,7 +77,7 @@ export class EntityManager {
     let type = "food";
     if (entity instanceof Tank) type = "tank";
     else if (entity instanceof Bullet) type = "bullet";
-    
+
     this.pool[type].push(entity);
   }
 
@@ -83,9 +85,9 @@ export class EntityManager {
     return this.entities.get(id);
   }
 
-  update(deltaTime) {
+  update(deltaTime, deltaMS) {
     for (const entity of this.entities.values()) {
-      entity.update(deltaTime);
+      entity.update(deltaTime, deltaMS);
     }
   }
 }

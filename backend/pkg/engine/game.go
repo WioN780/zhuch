@@ -71,7 +71,7 @@ func DefaultConfig() GameConfig {
 		TankRegenCooldown:  100,
 		TankFireCooldown:   10,
 
-		BulletMuzzleSpeed: 15.0,
+		BulletMuzzleSpeed: 20.0,
 		BulletWeight:      1.0,
 		BulletRadius:      5.0,
 		BulletDamage:      15.0,

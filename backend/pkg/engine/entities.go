@@ -68,24 +68,26 @@ func (b *BaseEntity) SetLastAttackerID(id string) { b.LastAttackerID = id }
 // -------- TANK --------
 type Tank struct {
 	BaseEntity
-	Config           *GameConfig
-	InputVector      Vector2
-	Orientation      float64
-	MaxSpeed         float64
-	MoveAcceleration float64
-	Score            float64
-	Kills            int
-	RegenRate        float64
-	QuickRegenRate   float64
-	RegenCooldown    int
-	FireCooldown     int
-	LastFireTick     int
-	ViewRange        float64
+	Name              string
+	Config            *GameConfig
+	InputVector       Vector2
+	Orientation       float64
+	MaxSpeed          float64
+	MoveAcceleration  float64
+	Score             float64
+	Kills             int
+	RegenRate         float64
+	QuickRegenRate    float64
+	RegenCooldown     int
+	BulletMuzzleSpeed float64
+	FireCooldown      int
+	LastFireTick      int
+	ViewRange         float64
 }
 
 var _ Entity = (*Tank)(nil)
 
-func NewTank(startV Vector2, config *GameConfig) *Tank {
+func NewTank(name string, startV Vector2, config *GameConfig) *Tank {
 	return &Tank{
 		BaseEntity: BaseEntity{
 			MovingCollidable: MovingCollidable{
@@ -99,15 +101,17 @@ func NewTank(startV Vector2, config *GameConfig) *Tank {
 			BodyDamage:       config.TankBodyDamage,
 			TicksSinceAction: 0,
 		},
-		Config:           config,
-		InputVector:      Vector2{0.0, 0.0},
-		MaxSpeed:         config.TankMaxSpeed,
-		MoveAcceleration: config.TankAcceleration,
-		RegenRate:        config.TankRegenRate,
-		QuickRegenRate:   config.TankQuickRegenRate,
-		RegenCooldown:    config.TankRegenCooldown,
-		FireCooldown:     config.TankFireCooldown,
-		ViewRange:        config.ViewRange,
+		Name:              name,
+		Config:            config,
+		InputVector:       Vector2{0.0, 0.0},
+		MaxSpeed:          config.TankMaxSpeed,
+		MoveAcceleration:  config.TankAcceleration,
+		RegenRate:         config.TankRegenRate,
+		QuickRegenRate:    config.TankQuickRegenRate,
+		RegenCooldown:     config.TankRegenCooldown,
+		BulletMuzzleSpeed: config.BulletMuzzleSpeed,
+		FireCooldown:      config.TankFireCooldown,
+		ViewRange:         config.ViewRange,
 	}
 }
 
@@ -153,9 +157,9 @@ func (t *Tank) Fire(orientation float64, currentTick int) *Bullet {
 	bulletWeight := t.Config.BulletWeight * scaleFactor
 	bulletDamage := t.Config.BulletDamage * scaleFactor
 
-	// Bullet Velocity = Muzzle Speed + Tank Velocity (Inertia)
-	bulletVelX := (dirX * t.Config.BulletMuzzleSpeed) + t.Vel.X
-	bulletVelY := (dirY * t.Config.BulletMuzzleSpeed) + t.Vel.Y
+	// Bullet Velocity = Muzzle Speed
+	bulletVelX := (dirX * t.BulletMuzzleSpeed)
+	bulletVelY := (dirY * t.BulletMuzzleSpeed)
 
 	// Recoil Force (Opposite of shot)
 	recoilForce := Vector2{X: -dirX, Y: -dirY}.Scale(t.Config.RecoilPower * bulletWeight)

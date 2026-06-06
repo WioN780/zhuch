@@ -1,340 +1,347 @@
 :root {
-  --bg-deep: #0a0a0a;
-  --bg-surface: #121212;
-  --bg-elevated: #1a1a1a;
-  
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-muted: rgba(255, 255, 255, 0.1);
-  
-  --text-primary: #f5f5f5;
-  --text-secondary: #a0a0a0;
-  --text-muted: #666666;
-  
-  --accent: #ffffff;
-  --accent-muted: rgba(255, 255, 255, 0.7);
-  
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
-  
-  --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --bg-deep: #0a0a0a;
+    --bg-surface: #121212;
+    --bg-elevated: #1a1a1a;
+
+    --border-subtle: rgba(255, 255, 255, 0.06);
+    --border-muted: rgba(255, 255, 255, 0.1);
+
+    --text-primary: #f5f5f5;
+    --text-secondary: #a0a0a0;
+    --text-muted: #666666;
+
+    --accent: #ffffff;
+    --accent-muted: rgba(255, 255, 255, 0.7);
+
+    --font-sans:
+        "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        sans-serif;
+    --font-mono: "JetBrains Mono", monospace;
+
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 * {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
-body, html {
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  background-color: var(--bg-deep);
-  color: var(--text-primary);
-  font-family: var(--font-sans);
+body,
+html {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background-color: var(--bg-deep);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
 }
 
 #app {
-  position: relative;
-  width: 100%;
-  height: 100%;
+    position: relative;
+    width: 100%;
+    height: 100%;
 }
 
 #game-container {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 1;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
 }
 
 #ui-layer {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 10;
-  pointer-events: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 10;
+    pointer-events: none;
 }
 
 #ui-layer > * {
-  pointer-events: auto;
+    pointer-events: auto;
 }
 
 /* Utilities */
 .glass {
-  background: rgba(18, 18, 18, 0.7);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--border-subtle);
+    background: rgba(18, 18, 18, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border-subtle);
 }
 
 .button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 10px 20px;
-  border-radius: 6px;
-  font-weight: 500;
-  font-size: 14px;
-  cursor: pointer;
-  transition: var(--transition-smooth);
-  border: 1px solid var(--border-muted);
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  text-decoration: none;
-  outline: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-weight: 500;
+    font-size: 14px;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+    border: 1px solid var(--border-muted);
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    text-decoration: none;
+    outline: none;
 }
 
 .button:hover {
-  background: var(--text-primary);
-  color: var(--bg-deep);
-  border-color: var(--text-primary);
+    background: var(--text-primary);
+    color: var(--bg-deep);
+    border-color: var(--text-primary);
 }
 
 .button-primary {
-  background: var(--text-primary);
-  color: var(--bg-deep);
-  border-color: var(--text-primary);
+    background: var(--text-primary);
+    color: var(--bg-deep);
+    border-color: var(--text-primary);
 }
 
 .button-primary:hover {
-  background: var(--accent-muted);
-  border-color: var(--accent-muted);
+    background: var(--accent-muted);
+    border-color: var(--accent-muted);
 }
 
 /* Screens */
 .screen {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-  background: var(--bg-deep);
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    background: var(--bg-deep);
 }
 
 .menu-screen {
-  background: radial-gradient(circle at center, #1a1a1a 0%, #0a0a0a 100%);
+    background: radial-gradient(circle at center, #1a1a1a 0%, #0a0a0a 100%);
 }
 
 .menu-content {
-  width: 360px;
-  padding: 40px;
-  border-radius: 12px;
-  text-align: center;
-  animation: fadeInScale 0.6s var(--ease-out);
+    width: 360px;
+    padding: 40px;
+    border-radius: 12px;
+    text-align: center;
+    animation: fadeInScale 0.6s var(--ease-out);
 }
 
 .logo {
-  font-size: 48px;
-  font-weight: 300;
-  letter-spacing: -2px;
-  margin-bottom: 8px;
-  color: var(--text-primary);
+    font-size: 48px;
+    font-weight: 300;
+    letter-spacing: -2px;
+    margin-bottom: 8px;
+    color: var(--text-primary);
 }
 
 .subtitle {
-  font-size: 14px;
-  color: var(--text-secondary);
-  margin-bottom: 32px;
-  text-transform: uppercase;
-  letter-spacing: 2px;
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin-bottom: 32px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
 }
 
 .input-group {
-  margin-bottom: 24px;
+    margin-bottom: 24px;
 }
 
-.input-group input, .input-group select {
-  width: 100%;
-  background: var(--bg-deep);
-  border: 1px solid var(--border-muted);
-  border-radius: 6px;
-  padding: 12px 16px;
-  color: var(--text-primary);
-  font-family: var(--font-sans);
-  font-size: 15px;
-  outline: none;
-  transition: var(--transition-smooth);
-  appearance: none;
+.input-group input,
+.input-group select {
+    width: 100%;
+    background: var(--bg-deep);
+    border: 1px solid var(--border-muted);
+    border-radius: 6px;
+    padding: 12px 16px;
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    outline: none;
+    transition: var(--transition-smooth);
+    appearance: none;
 }
 
 .input-group select {
-  cursor: pointer;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 12px center;
-  background-size: 16px;
+    cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 16px;
 }
 
-.input-group input:focus, .input-group select:focus {
-  border-color: var(--text-primary);
-  background: var(--bg-elevated);
+.input-group input:focus,
+.input-group select:focus {
+    border-color: var(--text-primary);
+    background: var(--bg-elevated);
 }
 
 #start-btn {
-  width: 100%;
-  padding: 12px;
+    width: 100%;
+    padding: 12px;
 }
 
 /* HUD */
 .hud {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  padding: 24px;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    padding: 24px;
 }
 
 .hud-top-right {
-  position: absolute;
-  top: 24px;
-  right: 24px;
+    position: absolute;
+    top: 24px;
+    right: 24px;
 }
 
 .leaderboard {
-  width: 200px;
-  padding: 16px;
-  border-radius: 8px;
+    width: 200px;
+    padding: 16px;
+    border-radius: 8px;
 }
 
 .leaderboard h3 {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  margin-bottom: 12px;
-  letter-spacing: 1px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    letter-spacing: 1px;
 }
 
 .hud-bottom-center {
-  position: absolute;
-  bottom: 32px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
+    position: absolute;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
 }
 
 .debug-coords {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-muted);
-  background: rgba(0, 0, 0, 0.3);
-  padding: 4px 12px;
-  border-radius: 4px;
-  letter-spacing: 0.5px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    background: rgba(0, 0, 0, 0.3);
+    padding: 4px 12px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
 }
 
 .stats-bar {
-  display: flex;
-  gap: 32px;
-  padding: 12px 24px;
-  border-radius: 32px;
+    display: flex;
+    gap: 32px;
+    padding: 12px 24px;
+    border-radius: 32px;
 }
 
 .stat {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
 }
 
 .stat .label {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-muted);
-  letter-spacing: 1px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: 1px;
 }
 
 .stat span:not(.label) {
-  font-family: var(--font-mono);
-  font-size: 18px;
-  font-weight: 500;
+    font-family: var(--font-mono);
+    font-size: 18px;
+    font-weight: 500;
 }
 
 /* Animations */
 @keyframes fadeInScale {
-  from {
-    opacity: 0;
-    transform: scale(0.95) translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
+    from {
+        opacity: 0;
+        transform: scale(0.95) translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
 }
 
 .spinner {
-  width: 24px;
-  height: 24px;
-  border: 2px solid var(--border-muted);
-  border-top-color: var(--text-primary);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  margin: 0 auto 16px;
+    width: 24px;
+    height: 24px;
+    border: 2px solid var(--border-muted);
+    border-top-color: var(--text-primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 16px;
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .error-toast {
-  position: absolute;
-  bottom: 24px;
-  right: 24px;
-  padding: 16px 24px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  animation: slideInRight 0.4s var(--ease-out);
+    position: absolute;
+    bottom: 24px;
+    right: 24px;
+    padding: 16px 24px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    animation: slideInRight 0.4s var(--ease-out);
 }
 
 /* Modals */
 .modal {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 300px;
-  padding: 32px;
-  border-radius: 12px;
-  z-index: 1000;
-  animation: fadeInScale 0.3s var(--ease-out);
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 300px;
+    padding: 32px;
+    border-radius: 12px;
+    z-index: 1000;
+    animation: fadeInScale 0.3s var(--ease-out);
 }
 
 .modal h2 {
-  font-size: 18px;
-  font-weight: 500;
-  margin-bottom: 24px;
+    font-size: 18px;
+    font-weight: 500;
+    margin-bottom: 24px;
 }
 
 .setting-item {
-  margin-bottom: 20px;
+    margin-bottom: 20px;
 }
 
 .setting-item label {
-  display: block;
-  font-size: 11px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  margin-bottom: 8px;
-  letter-spacing: 1px;
+    display: block;
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    letter-spacing: 1px;
 }
 
 #close-settings {
-  width: 100%;
-  margin-top: 12px;
+    width: 100%;
+    margin-top: 12px;
 }

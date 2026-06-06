@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 	"zhuch/pkg/engine"
 
 	"github.com/gorilla/websocket"
@@ -52,7 +53,23 @@ func ServeWs(manager *Manager, w http.ResponseWriter, r *http.Request) {
 		conn.Close()
 		return
 	}
-	playerName := string(nameBytes)
+	playerName := strings.TrimSpace(string(nameBytes))
+
+	if playerName == "" {
+		slog.Warn("connection rejected: empty name", "remote_addr", r.RemoteAddr)
+		errMsg, _ := json.Marshal(map[string]string{"type": "error", "message": "Name cannot be empty"})
+		conn.WriteMessage(websocket.TextMessage, errMsg)
+		conn.Close()
+		return
+	}
+
+	if room.Hub.isNameTaken(playerName) {
+		slog.Warn("connection rejected: name taken", "name", playerName)
+		errMsg, _ := json.Marshal(map[string]string{"type": "error", "message": "Name already in use"})
+		conn.WriteMessage(websocket.TextMessage, errMsg)
+		conn.Close()
+		return
+	}
 
 	slog.Info("player handshake successful", "name", playerName, "room", roomID, "remote_addr", r.RemoteAddr)
 
