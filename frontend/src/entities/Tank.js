@@ -1,4 +1,4 @@
-import { Graphics } from "pixi.js";
+import { Graphics, Text, TextStyle } from "pixi.js";
 import { EntityBase } from "./EntityBase.js";
 
 export class Tank extends EntityBase {
@@ -7,9 +7,27 @@ export class Tank extends EntityBase {
 
     this.body = new Graphics();
     this.barrel = new Graphics();
+    
+    // Name tag
+    const style = new TextStyle({
+      fontFamily: "Inter, sans-serif",
+      fontSize: 14,
+      fill: "#ffffff",
+      fontWeight: "500",
+      dropShadow: {
+        alpha: 0.5,
+        blur: 4,
+        color: "#000000",
+        distance: 2,
+      },
+    });
+    this.nameTag = new Text({ text: "", style });
+    this.nameTag.anchor.set(0.5, 1);
+    this.nameTag.position.set(0, -30);
 
     this.container.addChild(this.barrel);
     this.container.addChild(this.body);
+    this.container.addChild(this.nameTag);
 
     this.radius = 20;
     this.barrelAngle = 0;
@@ -39,12 +57,20 @@ export class Tank extends EntityBase {
 
   updateData(data) {
     super.updateData(data);
+    
+    // Update Name
+    const name = data.name || data.Name;
+    if (name && this.nameTag.text !== name) {
+      this.nameTag.text = name;
+    }
+
     const object = data.object || data.Object;
     if (object && (object.Radius || object.radius)) {
       const newRadius = object.Radius || object.radius;
       if (this.radius !== newRadius) {
         this.radius = newRadius;
         this.draw();
+        this.nameTag.position.set(0, -this.radius - 10);
       }
     }
 

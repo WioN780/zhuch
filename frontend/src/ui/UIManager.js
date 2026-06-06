@@ -128,8 +128,22 @@ export class UIManager {
   showError(message) {
     const error = document.createElement("div");
     error.className = "error-toast glass";
-    error.innerHTML = `<p>${message}</p><button onclick="window.location.reload()" class="button">Reload</button>`;
+    
+    // If we're in menu or connecting, it's likely a non-fatal validation error
+    const isFatal = this.game.state === "ERROR";
+    
+    error.innerHTML = `
+      <p>${message}</p>
+      ${isFatal ? '<button onclick="window.location.reload()" class="button">Reload</button>' : ''}
+    `;
     this.container.appendChild(error);
+
+    if (!isFatal) {
+      setTimeout(() => {
+        error.style.opacity = '0';
+        setTimeout(() => error.remove(), 500);
+      }, 3000);
+    }
   }
 
   updateHUD(entities, metrics) {
@@ -157,9 +171,10 @@ export class UIManager {
       leaderboardList.innerHTML = tanks.map((t, i) => {
         const id = t.id || t.ID;
         const score = t.score !== undefined ? t.score : t.Score;
+        const name = t.name || t.Name || 'Tank';
         return `
           <div class="leaderboard-item ${id === this.game.renderer.playerID ? 'self' : ''}">
-            <span>${i + 1}. ${t.name || 'Tank'}</span>
+            <span>${i + 1}. ${name}</span>
             <span>${Math.floor(score || 0)}</span>
           </div>
         `}).join('');

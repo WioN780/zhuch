@@ -68,6 +68,7 @@ func (b *BaseEntity) SetLastAttackerID(id string) { b.LastAttackerID = id }
 // -------- TANK --------
 type Tank struct {
 	BaseEntity
+	Name              string
 	Config            *GameConfig
 	InputVector       Vector2
 	Orientation       float64
@@ -86,7 +87,7 @@ type Tank struct {
 
 var _ Entity = (*Tank)(nil)
 
-func NewTank(startV Vector2, config *GameConfig) *Tank {
+func NewTank(name string, startV Vector2, config *GameConfig) *Tank {
 	return &Tank{
 		BaseEntity: BaseEntity{
 			MovingCollidable: MovingCollidable{
@@ -100,6 +101,7 @@ func NewTank(startV Vector2, config *GameConfig) *Tank {
 			BodyDamage:       config.TankBodyDamage,
 			TicksSinceAction: 0,
 		},
+		Name:              name,
 		Config:            config,
 		InputVector:       Vector2{0.0, 0.0},
 		MaxSpeed:          config.TankMaxSpeed,

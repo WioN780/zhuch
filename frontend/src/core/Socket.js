@@ -50,6 +50,13 @@ export class Socket {
   }
 
   handleMessage(data) {
+    if (data.type === "error") {
+      console.error("Server error:", data.message);
+      this.game.setState("MENU");
+      this.game.ui.showError(data.message);
+      return;
+    }
+
     if (data.type === "init") {
       this.game.renderer.setPlayerID(data.tank_id);
       return;

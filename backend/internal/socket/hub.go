@@ -37,7 +37,7 @@ func (h *Hub) Run() {
 			h.mu.Lock()
 			h.Clients[client] = true
 			// Create a tank in the engine!
-			tank := engine.NewTank(engine.Vector2{X: 100, Y: 100}, &h.Game.Config)
+			tank := engine.NewTank(client.ClientName, engine.Vector2{X: 100, Y: 100}, &h.Game.Config)
 			client.TankID = tank.GetID()
 			h.Game.Entities = append(h.Game.Entities, tank)
 			h.mu.Unlock()
@@ -113,4 +113,15 @@ func (h *Hub) BroadcastGameState() {
 			delete(h.Clients, client)
 		}
 	}
+}
+
+func (h *Hub) isNameTaken(name string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for client := range h.Clients {
+		if client.ClientName == name {
+			return true
+		}
+	}
+	return false
 }
