@@ -3,6 +3,7 @@ package engine
 import (
 	"math/rand"
 	"sync"
+	"time"
 )
 
 // GameConfig holds all the global variables
@@ -85,6 +86,11 @@ func DefaultConfig() GameConfig {
 	}
 }
 
+type PerformanceMetrics struct {
+	TickDuration time.Duration
+	EntityCount  int
+}
+
 // Game represents a single game
 type Game struct {
 	Config      GameConfig
@@ -93,6 +99,7 @@ type Game struct {
 	mu          sync.Mutex
 	IsActive    bool
 	CurrentTick int
+	Metrics     PerformanceMetrics
 }
 
 // NewGame acts as the factory for the room
@@ -107,6 +114,8 @@ func NewGame(config GameConfig) *Game {
 
 // Tick executes exactly one frame of game logic
 func (g *Game) Tick() {
+	start := time.Now()
+
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -148,6 +157,9 @@ func (g *Game) Tick() {
 	}
 
 	g.CheckAllCollisions(g.Arena)
+
+	g.Metrics.TickDuration = time.Since(start)
+	g.Metrics.EntityCount = len(g.Entities)
 }
 
 func (g *Game) GetVisibleEntities(pos Vector2, viewRange float64) []Entity {
@@ -212,4 +224,12 @@ func (g *Game) processDeath(victim Entity) {
 	case *Food:
 		killer.Score += v.ScoreValue
 	}
+}
+
+// Reset clears the game state
+func (g *Game) Reset() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.Entities = make([]Entity, 0)
+	g.CurrentTick = 0
 }
