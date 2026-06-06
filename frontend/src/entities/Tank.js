@@ -2,8 +2,8 @@ import { Graphics } from "pixi.js";
 import { EntityBase } from "./EntityBase.js";
 
 export class Tank extends EntityBase {
-  constructor(id) {
-    super(id);
+  constructor(id, manager) {
+    super(id, manager);
 
     this.body = new Graphics();
     this.barrel = new Graphics();
@@ -39,22 +39,33 @@ export class Tank extends EntityBase {
 
   updateData(data) {
     super.updateData(data);
-    if (data.Object && data.Object.Radius) {
-      if (this.radius !== data.Object.Radius) {
-        this.radius = data.Object.Radius;
+    const object = data.object || data.Object;
+    if (object && (object.Radius || object.radius)) {
+      const newRadius = object.Radius || object.radius;
+      if (this.radius !== newRadius) {
+        this.radius = newRadius;
         this.draw();
       }
     }
 
-    if (data.Orientation !== undefined) {
-      this.targetBarrelAngle = data.Orientation;
+    const orientation = data.orientation !== undefined ? data.orientation : data.Orientation;
+    if (orientation !== undefined) {
+      // Only update target if it's not the local player
+      if (this.id !== this.manager?.renderer?.playerID) {
+        this.targetBarrelAngle = orientation;
+      }
     }
   }
 
   update(deltaTime) {
     super.update(deltaTime);
 
-    this.barrelAngle = this.targetBarrelAngle;
+    // Shortest path interpolation for angles
+    let diff = this.targetBarrelAngle - this.barrelAngle;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+
+    this.barrelAngle += diff * 0.3 * deltaTime;
     this.barrel.rotation = this.barrelAngle;
   }
 }

@@ -6,19 +6,25 @@ export class EntityManager {
   constructor(renderer) {
     this.renderer = renderer;
     this.entities = new Map();
+    this.pool = {
+      tank: [],
+      bullet: [],
+      food: [],
+    };
   }
 
   updateEntities(entitiesData) {
     const receivedIDs = new Set();
 
     for (const data of entitiesData) {
-      receivedIDs.add(data.ID);
-      let entity = this.entities.get(data.ID);
+      const id = data.id || data.ID;
+      receivedIDs.add(id);
+      let entity = this.entities.get(id);
 
       if (!entity) {
-        entity = this.createEntity(data);
+        entity = this.getOrCreateEntity(data);
         if (entity) {
-          this.entities.set(data.ID, entity);
+          this.entities.set(id, entity);
           this.renderer.entitiesLayer.addChild(entity.container);
         }
       }
@@ -28,25 +34,49 @@ export class EntityManager {
       }
     }
 
-    // Remove entities that are no longer in the snapshot
+    // Return entities that are no longer in the snapshot to the pool
     for (const [id, entity] of this.entities) {
       if (!receivedIDs.has(id)) {
-        entity.destroy();
+        this.recycleEntity(entity);
         this.entities.delete(id);
       }
     }
   }
 
-  createEntity(data) {
-    // Determine type based on properties
-    if (data.InputVector !== undefined) {
-      return new Tank(data.ID);
-    } else if (data.OwnerID !== undefined) {
-      return new Bullet(data.ID);
-    } else if (data.Type !== undefined) {
-      return new Food(data.ID);
+  getOrCreateEntity(data) {
+    const type = this.getEntityType(data);
+    let entity = this.pool[type]?.pop();
+
+    if (!entity) {
+      entity = this.createEntity(type, data);
+    } else {
+      entity.id = data.id || data.ID;
+      entity.reset?.();
     }
+    return entity;
+  }
+
+  getEntityType(data) {
+    if (data.orientation !== undefined || data.Orientation !== undefined) return "tank";
+    if (data.owner_id !== undefined || data.OwnerID !== undefined) return "bullet";
+    return "food";
+  }
+
+  createEntity(type, data) {
+    const id = data.id || data.ID;
+    if (type === "tank") return new Tank(id, this);
+    if (type === "bullet") return new Bullet(id, this);
+    if (type === "food") return new Food(id, this);
     return null;
+  }
+
+  recycleEntity(entity) {
+    entity.container.parent?.removeChild(entity.container);
+    let type = "food";
+    if (entity instanceof Tank) type = "tank";
+    else if (entity instanceof Bullet) type = "bullet";
+    
+    this.pool[type].push(entity);
   }
 
   getEntity(id) {

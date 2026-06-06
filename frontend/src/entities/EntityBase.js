@@ -1,8 +1,9 @@
 import { Container, Graphics } from "pixi.js";
 
 export class EntityBase {
-  constructor(id) {
+  constructor(id, manager) {
     this.id = id;
+    this.manager = manager;
     this.container = new Container();
     this.position = { x: 0, y: 0 };
     this.velocity = { x: 0, y: 0 };
@@ -24,60 +25,82 @@ export class EntityBase {
   }
 
   updateData(data) {
-    if (data.Object) {
+    const object = data.object || data.Object;
+    const vel = data.vel || data.Vel;
+
+    if (object) {
+      // Handle different field cases (Center vs center)
+      const center = object.Center || object.center || { X: 0, Y: 0 };
       this.targetPosition = {
-        x: data.Object.Center.X,
-        y: data.Object.Center.Y,
+        x: center.X || center.x,
+        y: center.Y || center.y,
       };
 
-      // Snap to position if this is the first update to prevent "flying in" from (0,0)
       if (!this.initialized) {
         this.position.x = this.targetPosition.x;
         this.position.y = this.targetPosition.y;
         this.initialized = true;
       }
     }
-    if (data.Vel) {
-      this.targetVelocity = { x: data.Vel.X, y: data.Vel.Y };
+    
+    if (vel) {
+      this.targetVelocity = { x: vel.X || vel.x, y: vel.Y || vel.y };
     }
 
-    this.health = data.Health;
-    this.maxHealth = data.MaxHealth;
-    this.updateHealthBar();
+    const health = data.health !== undefined ? data.health : data.Health;
+    const maxHealth = data.max_health !== undefined ? data.max_health : (data.MaxHealth || 100);
+    
+    if (this.health !== health || this.maxHealth !== maxHealth) {
+      this.health = health;
+      this.maxHealth = maxHealth;
+      this.updateHealthBar();
+    }
   }
 
   updateHealthBar() {
-    if (!this.health || this.health >= this.maxHealth) {
+    if (this.health === undefined || this.health >= this.maxHealth) {
       this.healthBar.visible = false;
       return;
     }
 
+    const pct = Math.max(0, this.health / this.maxHealth);
+    if (this.lastHealthPct === pct) return;
+    this.lastHealthPct = pct;
+
     this.healthBar.visible = true;
     const width = 40;
     const height = 4;
-    const pct = Math.max(0, this.health / this.maxHealth);
-
-    // Offset below the entity
     const yOffset = 35;
 
-    this.healthBarBg.clear();
-    this.healthBarBg.rect(-width / 2, yOffset, width, height);
-    this.healthBarBg.fill({ color: 0x000000, alpha: 0.5 });
+    this.healthBarBg.clear()
+      .rect(-width / 2, yOffset, width, height)
+      .fill({ color: 0x000000, alpha: 0.5 });
 
-    this.healthBarFill.clear();
-    this.healthBarFill.rect(-width / 2, yOffset, width * pct, height);
-    this.healthBarFill.fill({ color: 0x81c784 }); // green
+    this.healthBarFill.clear()
+      .rect(-width / 2, yOffset, width * pct, height)
+      .fill({ color: 0x81c784 });
   }
 
   update(deltaTime) {
     if (!this.initialized) return;
-    this.position.x +=
-      (this.targetPosition.x - this.position.x) * this.lerpFactor * deltaTime;
-    this.position.y +=
-      (this.targetPosition.y - this.position.y) * this.lerpFactor * deltaTime;
 
-    // Update container position
+    // Smoother interpolation using velocity prediction
+    const lerp = 1 - Math.pow(0.1, deltaTime / 60); // Independent of frame rate (approx 0.1 at 60fps)
+    
+    this.position.x += (this.targetPosition.x - this.position.x) * this.lerpFactor * deltaTime;
+    this.position.y += (this.targetPosition.y - this.position.y) * this.lerpFactor * deltaTime;
+
+    // Optional: add a bit of velocity to predict next frame
+    // this.position.x += this.targetVelocity.x * deltaTime * 0.1;
+    // this.position.y += this.targetVelocity.y * deltaTime * 0.1;
+
     this.container.position.set(this.position.x, this.position.y);
+  }
+
+  reset() {
+    this.initialized = false;
+    this.lastHealthPct = -1;
+    this.healthBar.visible = false;
   }
 
   destroy() {

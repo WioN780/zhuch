@@ -95,7 +95,12 @@ func (h *Hub) BroadcastGameState() {
 			visibleEntities = []engine.Entity{}
 		}
 
-		state, err := json.Marshal(visibleEntities)
+		packet := map[string]interface{}{
+			"entities": visibleEntities,
+			"metrics":  h.Game.Metrics,
+		}
+
+		state, err := json.Marshal(packet)
 		if err != nil {
 			slog.Error("failed to marshal per-client game state", "error", err)
 			continue
