@@ -55,8 +55,11 @@ export class Socket {
       return;
     }
 
-    // Default: it's a game state update (array of entities)
-    if (Array.isArray(data)) {
+    // New format: { "entities": [...], "metrics": {...} }
+    if (data.entities && Array.isArray(data.entities)) {
+      this.game.renderer.processStateUpdate(data.entities, data.metrics);
+    } else if (Array.isArray(data)) {
+      // Fallback for old format
       this.game.renderer.processStateUpdate(data);
     }
   }

@@ -3,7 +3,6 @@ package socket
 import (
 	"encoding/json"
 	"log/slog"
-	"math"
 	"zhuch/pkg/engine"
 
 	"github.com/gorilla/websocket"
@@ -38,7 +37,7 @@ func (c *Client) ReadPump() {
 			continue
 		}
 
-		// Update the tank in the engine (can this flood the mutex potencially?)
+		// Update the tank in the engine
 		h := c.Hub
 		h.mu.Lock()
 		for _, e := range h.Game.Entities {
@@ -46,16 +45,11 @@ func (c *Client) ReadPump() {
 				if tank, ok := e.(*engine.Tank); ok {
 					// Always update movement and orientation if provided
 					tank.InputVector = input.InputVector
-
-					// Calculate orientation from MousePos
-					pos := tank.GetPosition()
-					dx := input.MousePos.X - pos.X
-					dy := input.MousePos.Y - pos.Y
-					tank.Orientation = math.Atan2(dy, dx)
+					tank.Orientation = input.Orientation
 
 					// If Type is "fire", perform fire action
 					if input.Type == "fire" {
-						bullet := tank.Fire(input.MousePos, h.Game.CurrentTick)
+						bullet := tank.Fire(input.Orientation, h.Game.CurrentTick)
 						if bullet != nil {
 							h.Game.Entities = append(h.Game.Entities, bullet)
 						}

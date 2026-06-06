@@ -87,8 +87,8 @@ func DefaultConfig() GameConfig {
 }
 
 type PerformanceMetrics struct {
-	TickDuration time.Duration
-	EntityCount  int
+	TickDuration time.Duration `json:"tick_duration_ns"`
+	EntityCount  int           `json:"entity_count"`
 }
 
 // Game represents a single game

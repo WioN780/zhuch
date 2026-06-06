@@ -2,8 +2,8 @@ import { Graphics } from "pixi.js";
 import { EntityBase } from "./EntityBase.js";
 
 export class Food extends EntityBase {
-  constructor(id) {
-    super(id);
+  constructor(id, manager) {
+    super(id, manager);
     this.graphics = new Graphics();
     this.container.addChild(this.graphics);
     this.type = "square";
@@ -61,17 +61,22 @@ export class Food extends EntityBase {
   updateData(data) {
     super.updateData(data);
     let redraw = false;
-    if (data.Type && this.type !== data.Type) {
-      this.type = data.Type;
+    
+    const type = data.type || data.Type;
+    if (type && this.type !== type) {
+      this.type = type;
       redraw = true;
     }
-    if (data.Object && (data.Object.Size || data.Object.SideLength)) {
-      const newSize = data.Object.Size || data.Object.SideLength;
+
+    const object = data.object || data.Object;
+    if (object) {
+      const newSize = object.Size || object.size || object.SideLength || object.side_length || 15;
       if (this.size !== newSize) {
         this.size = newSize;
         redraw = true;
       }
     }
+    
     if (redraw) this.draw();
   }
 

@@ -24,6 +24,11 @@ export class Renderer {
     this.camera = new Camera(this);
     this.entityManager = new EntityManager(this);
 
+    // TPS Tracking
+    this.lastUpdateTimestamp = performance.now();
+    this.currentTPS = 0;
+    this.tpsFilter = 0.9; // Smoothing factor
+
     this.setupBackground();
   }
 
@@ -64,7 +69,17 @@ export class Renderer {
     this.playerID = id;
   }
 
-  processStateUpdate(entities) {
+  processStateUpdate(entities, metrics) {
+    // Calculate network TPS
+    const now = performance.now();
+    const dt = (now - this.lastUpdateTimestamp) / 1000;
+    this.lastUpdateTimestamp = now;
+
+    if (dt > 0) {
+      const instantTPS = 1 / dt;
+      this.currentTPS = (this.currentTPS * this.tpsFilter) + (instantTPS * (1 - this.tpsFilter));
+    }
+
     this.entityManager.updateEntities(entities);
 
     // Follow player tank
@@ -72,6 +87,23 @@ export class Renderer {
     if (playerTank) {
       this.camera.setTarget(playerTank.position);
     }
+
+    if (metrics) {
+      this.updateMetricsUI(metrics);
+    }
+
+    // Update HUD (scores, leaderboard)
+    this.game.ui.updateHUD(entities, metrics);
+  }
+
+  updateMetricsUI(metrics) {
+    const el = document.getElementById("debug-metrics");
+    if (!el) return;
+    
+    const count = metrics.entity_count !== undefined ? metrics.entity_count : metrics.EntityCount;
+    const tps = Math.round(this.currentTPS);
+    
+    el.innerText = `TPS: ${tps} | Entities: ${count}`;
   }
 
   update(deltaTime) {

@@ -22,6 +22,7 @@ type PlayerInput struct {
 	Type        string         `json:"type"` // "input" or "fire"
 	InputVector engine.Vector2 `json:"input_vector"`
 	MousePos    engine.Vector2 `json:"mouse_pos"`
+	Orientation float64        `json:"orientation"`
 }
 
 // This handles websocket requests from the peer.

@@ -133,7 +133,7 @@ func (t *Tank) TickCalculation(friction float64) {
 
 func (t *Tank) CollisionAction(other Entity) { t.BaseEntity.CollisionAction(other) }
 
-func (t *Tank) Fire(target Vector2, currentTick int) *Bullet {
+func (t *Tank) Fire(orientation float64, currentTick int) *Bullet {
 	if currentTick-t.LastFireTick < t.FireCooldown {
 		return nil
 	}
@@ -145,15 +145,7 @@ func (t *Tank) Fire(target Vector2, currentTick int) *Bullet {
 		radius = circ.Radius
 	}
 
-	// Calculate direction
-	dx := target.X - pos.X
-	dy := target.Y - pos.Y
-	dist := math.Sqrt(dx*dx + dy*dy)
-	if dist == 0 {
-		return nil
-	}
-
-	dirX, dirY := dx/dist, dy/dist
+	dirX, dirY := math.Cos(orientation), math.Sin(orientation)
 
 	// Proportional scaling based on current Tank size relative to base
 	scaleFactor := radius / t.Config.TankRadius
