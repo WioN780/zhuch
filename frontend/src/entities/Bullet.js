@@ -18,7 +18,15 @@ export class Bullet extends EntityBase {
 
   updateData(data) {
     super.updateData(data);
+
+    // Always keep authoritative state updated for smooth extrapolation
     const object = data.object || data.Object;
+    const center = object?.Center || object?.center || { X: 0, Y: 0 };
+    const vel = data.vel || data.Vel;
+
+    this.position = { x: center.X || center.x, y: center.Y || center.y };
+    this.velocity = { x: vel?.X || vel?.x || 0, y: vel?.Y || vel?.y || 0 };
+
     if (object && (object.Radius || object.radius)) {
       const newRadius = object.Radius || object.radius;
       if (this.radius !== newRadius) {
@@ -26,5 +34,17 @@ export class Bullet extends EntityBase {
         this.draw();
       }
     }
+  }
+
+  update(deltaTime, deltaMS) {
+    if (!this.initialized) return;
+
+    // Simple extrapolation for 60fps smoothness
+    // Move at server-provided velocity between updates
+    const ratio = deltaMS / 50;
+    this.position.x += this.velocity.x * ratio;
+    this.position.y += this.velocity.y * ratio;
+
+    this.syncContainer();
   }
 }

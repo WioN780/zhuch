@@ -157,7 +157,7 @@ func (t *Tank) Fire(orientation float64, currentTick int) *Bullet {
 	bulletWeight := t.Config.BulletWeight * scaleFactor
 	bulletDamage := t.Config.BulletDamage * scaleFactor
 
-	// Bullet Velocity = Muzzle Speed + Tank Velocity (Inertia)
+	// Bullet Velocity = Muzzle Speed
 	bulletVelX := (dirX * t.BulletMuzzleSpeed)
 	bulletVelY := (dirY * t.BulletMuzzleSpeed)
 

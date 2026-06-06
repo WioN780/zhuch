@@ -5,6 +5,11 @@ export class InputManager {
     this.mousePos = { x: 0, y: 0 };
     this.isMouseDown = false;
 
+    // Throttling for network efficiency
+    this.lastSentInput = null;
+    this.lastSendTimestamp = 0;
+    this.sendInterval = 50; // 20Hz (matches server)
+
     window.addEventListener("keydown", (e) => this.keys.add(e.code));
     window.addEventListener("keyup", (e) => this.keys.delete(e.code));
     window.addEventListener("mousemove", (e) => {
@@ -42,29 +47,40 @@ export class InputManager {
       inputVector.y /= length;
     }
 
-    // Get player tank for orientation
-    const playerTank = this.game.renderer.entityManager.getEntity(this.game.renderer.playerID);
+    // Get player tank for current orientation
+    const playerTank = this.game.renderer.entityManager.getEntity(
+      this.game.renderer.playerID,
+    );
     let orientation = 0;
-    
+
     if (playerTank) {
-      // Calculate target angle from mouse locally for instant feedback
+      // Local visual rotation for instant feedback
       const worldMousePos = this.game.renderer.screenToWorld(
         this.mousePos.x,
         this.mousePos.y,
       );
-      
       const dx = worldMousePos.x - playerTank.position.x;
       const dy = worldMousePos.y - playerTank.position.y;
       playerTank.targetBarrelAngle = Math.atan2(dy, dx);
-      
-      // Use the actual current barrel rotation for the server (logical direction)
       orientation = playerTank.barrelAngle;
     }
 
-    this.game.socket.sendInput({
+    // THROTTLED INPUT SENDING
+    const now = performance.now();
+    const currentInput = {
       type: this.isMouseDown ? "fire" : "input",
       input_vector: inputVector,
       orientation: orientation,
-    });
+    };
+
+    // Only send if time has passed OR if a critical action changed (firing)
+    const timeToUpdate = now - this.lastSendTimestamp >= this.sendInterval;
+    const actionChanged = this.lastSentInput?.type !== currentInput.type;
+
+    if (timeToUpdate || actionChanged) {
+      this.game.socket.sendInput(currentInput);
+      this.lastSentInput = JSON.parse(JSON.stringify(currentInput));
+      this.lastSendTimestamp = now;
+    }
   }
 }

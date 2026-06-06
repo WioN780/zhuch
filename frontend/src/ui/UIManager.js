@@ -128,19 +128,19 @@ export class UIManager {
   showError(message) {
     const error = document.createElement("div");
     error.className = "error-toast glass";
-    
+
     // If we're in menu or connecting, it's likely a non-fatal validation error
     const isFatal = this.game.state === "ERROR";
-    
+
     error.innerHTML = `
       <p>${message}</p>
-      ${isFatal ? '<button onclick="window.location.reload()" class="button">Reload</button>' : ''}
+      ${isFatal ? '<button onclick="window.location.reload()" class="button">Reload</button>' : ""}
     `;
     this.container.appendChild(error);
 
     if (!isFatal) {
       setTimeout(() => {
-        error.style.opacity = '0';
+        error.style.opacity = "0";
         setTimeout(() => error.remove(), 500);
       }, 3000);
     }
@@ -148,10 +148,14 @@ export class UIManager {
 
   updateHUD(entities, metrics) {
     // Update score, kills
-    const playerTank = entities.find(e => (e.id || e.ID) === this.game.renderer.playerID);
+    const playerTank = entities.find(
+      (e) => (e.id || e.ID) === this.game.renderer.playerID,
+    );
     if (playerTank) {
-      const score = playerTank.score !== undefined ? playerTank.score : playerTank.Score;
-      const kills = playerTank.kills !== undefined ? playerTank.kills : playerTank.Kills;
+      const score =
+        playerTank.score !== undefined ? playerTank.score : playerTank.Score;
+      const kills =
+        playerTank.kills !== undefined ? playerTank.kills : playerTank.Kills;
       document.getElementById("stat-score").innerText = Math.floor(score || 0);
       document.getElementById("stat-kills").innerText = kills || 0;
     }
@@ -160,7 +164,7 @@ export class UIManager {
     const leaderboardList = document.getElementById("leaderboard-list");
     if (leaderboardList) {
       const tanks = entities
-        .filter(e => e.score !== undefined || e.Score !== undefined)
+        .filter((e) => e.score !== undefined || e.Score !== undefined)
         .sort((a, b) => {
           const sA = a.score !== undefined ? a.score : a.Score;
           const sB = b.score !== undefined ? b.score : b.Score;
@@ -168,16 +172,19 @@ export class UIManager {
         })
         .slice(0, 5);
 
-      leaderboardList.innerHTML = tanks.map((t, i) => {
-        const id = t.id || t.ID;
-        const score = t.score !== undefined ? t.score : t.Score;
-        const name = t.name || t.Name || 'Tank';
-        return `
-          <div class="leaderboard-item ${id === this.game.renderer.playerID ? 'self' : ''}">
+      leaderboardList.innerHTML = tanks
+        .map((t, i) => {
+          const id = t.id || t.ID;
+          const score = t.score !== undefined ? t.score : t.Score;
+          const name = t.name || t.Name || "Tank";
+          return `
+          <div class="leaderboard-item ${id === this.game.renderer.playerID ? "self" : ""}">
             <span>${i + 1}. ${name}</span>
             <span>${Math.floor(score || 0)}</span>
           </div>
-        `}).join('');
+        `;
+        })
+        .join("");
     }
   }
 }

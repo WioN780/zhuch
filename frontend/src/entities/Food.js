@@ -61,7 +61,7 @@ export class Food extends EntityBase {
   updateData(data) {
     super.updateData(data);
     let redraw = false;
-    
+
     const type = data.type || data.Type;
     if (type && this.type !== type) {
       this.type = type;
@@ -70,13 +70,18 @@ export class Food extends EntityBase {
 
     const object = data.object || data.Object;
     if (object) {
-      const newSize = object.Size || object.size || object.SideLength || object.side_length || 15;
+      const newSize =
+        object.Size ||
+        object.size ||
+        object.SideLength ||
+        object.side_length ||
+        15;
       if (this.size !== newSize) {
         this.size = newSize;
         redraw = true;
       }
     }
-    
+
     if (redraw) this.draw();
   }
 

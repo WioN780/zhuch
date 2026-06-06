@@ -39,7 +39,7 @@ export class Game {
 
     // Start main loop
     this.app.ticker.add((ticker) => {
-      this.update(ticker.deltaTime);
+      this.update(ticker.deltaTime, ticker.deltaMS);
     });
   }
 
@@ -49,9 +49,9 @@ export class Game {
     this.ui.onStateChange(newState);
   }
 
-  update(deltaTime) {
+  update(deltaTime, deltaMS) {
     if (this.state === "PLAYING") {
-      this.renderer.update(deltaTime);
+      this.renderer.update(deltaTime, deltaMS);
       this.input.update(deltaTime);
     }
   }
