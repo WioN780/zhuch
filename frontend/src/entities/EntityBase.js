@@ -99,8 +99,33 @@ export class EntityBase {
 
     this.health = newState.health;
     this.maxHealth = newState.maxHealth;
+
+    // Detect Damage
+    if (this.oldHealth !== undefined && this.health < this.oldHealth) {
+      this.triggerHitEffect();
+      if (this.isLocal) {
+        this.manager.renderer.shake(10);
+
+        // Check for death
+        if (this.health <= 0) {
+          setTimeout(() => {
+            this.manager.renderer.game.setState("MENU");
+          }, 1500); // Wait a bit for the explosion effect
+        }
+      }
+    }
+    this.oldHealth = this.health;
+
     this.velocity = { ...newState.vel }; // Store latest velocity for extrapolation
     this.updateHealthBar();
+  }
+
+  triggerHitEffect() {
+    // Simple flash effect
+    this.container.alpha = 0.5;
+    setTimeout(() => {
+      if (this.container) this.container.alpha = 1.0;
+    }, 50);
   }
 
   onServerUpdate(serverState) {}

@@ -89,10 +89,10 @@ export class Game {
     }
   }
 
-  async connect(playerName, roomID = "default") {
+  async connect(playerName, roomID = "default", customURL = null) {
     this.setState("CONNECTING");
     try {
-      await this.socket.connect(playerName, roomID);
+      await this.socket.connect(playerName, roomID, customURL);
       this.setState("PLAYING");
     } catch (err) {
       console.error("Connection failed:", err);

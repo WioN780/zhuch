@@ -1,6 +1,7 @@
 import { Container, Graphics } from "pixi.js";
 import { Camera } from "./Camera.js";
 import { EntityManager } from "../entities/EntityManager.js";
+import { EffectsManager } from "./EffectsManager.js";
 
 export class Renderer {
   constructor(game) {
@@ -23,6 +24,11 @@ export class Renderer {
 
     this.camera = new Camera(this);
     this.entityManager = new EntityManager(this);
+    this.effects = new EffectsManager(this);
+
+    // Screen Shake
+    this.shakeAmount = 0;
+    this.shakeDecay = 0.9;
 
     const config = game.config;
 
@@ -110,24 +116,36 @@ export class Renderer {
   }
 
   updateMetricsUI(metrics) {
-    const el = document.getElementById("debug-metrics");
-    if (!el) return;
+    const metricsEl = document.getElementById("debug-metrics");
+    if (metricsEl) {
+      const count =
+        metrics.entity_count !== undefined
+          ? metrics.entity_count
+          : metrics.EntityCount;
+      const tps = Math.round(this.currentTPS);
+      metricsEl.innerText = `TPS: ${tps} | Entities: ${count}`;
+    }
 
-    const count =
-      metrics.entity_count !== undefined
-        ? metrics.entity_count
-        : metrics.EntityCount;
-    const tps = Math.round(this.currentTPS);
+    const pingEl = document.getElementById("debug-ping");
+    if (pingEl && this.game.socket) {
+      const ping = Math.round(this.game.socket.latency * 2); // Round trip
+      pingEl.innerText = `Ping: ${ping}ms`;
+    }
+  }
 
-    el.innerText = `TPS: ${tps} | Entities: ${count}`;
+  shake(amount) {
+    this.shakeAmount = Math.max(this.shakeAmount, amount);
   }
 
   update(deltaTime, deltaMS) {
     this.camera.update(deltaTime);
     this.entityManager.update(deltaTime, deltaMS);
+    this.effects.update(deltaTime);
 
     // Update debug coordinates UI
     const playerTank = this.entityManager.getEntity(this.playerID);
+    let cameraTargetPos = { x: this.camera.x, y: this.camera.y };
+
     if (playerTank) {
       const debugEl = document.getElementById("debug-coords");
       if (debugEl) {
@@ -137,8 +155,22 @@ export class Renderer {
       }
     }
 
+    // Apply screen shake
+    let shakeX = 0;
+    let shakeY = 0;
+    if (this.shakeAmount > 0.1) {
+      shakeX = (Math.random() - 0.5) * this.shakeAmount;
+      shakeY = (Math.random() - 0.5) * this.shakeAmount;
+      this.shakeAmount *= this.shakeDecay;
+    } else {
+      this.shakeAmount = 0;
+    }
+
     // Apply camera transform to worldContainer
-    this.worldContainer.position.set(this.camera.x, this.camera.y);
+    this.worldContainer.position.set(
+      this.camera.x + shakeX,
+      this.camera.y + shakeY,
+    );
     this.worldContainer.scale.set(this.camera.zoom);
   }
 

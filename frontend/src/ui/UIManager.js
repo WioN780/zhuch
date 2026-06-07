@@ -31,18 +31,24 @@ export class UIManager {
     const menu = document.createElement("div");
     menu.className = "screen menu-screen";
     menu.innerHTML = `
+            <div class="menu-background">
+                <div class="menu-grid"></div>
+            </div>
             <div class="menu-content glass">
                 <h1 class="logo">zhuch</h1>
                 <p class="subtitle">----------------------</p>
                 <div class="input-group">
-                    <input type="text" id="player-name" placeholder="Enter name..." maxlength="16" value="Player">
+                    <input type="text" id="player-name" placeholder="Enter name..." maxlength="16" value="">
                 </div>
                 <div class="input-group">
                     <select id="room-id">
-                        <option value="default">Default Server (US)</option>
-                        <option value="europe">Europe Central</option>
-                        <option value="asia">Asia East</option>
+                        <option value="default">Default Server</option>
+                        <option value="local">Local Server (8080)</option>
+                        <option value="custom">Custom Server</option>
                     </select>
+                </div>
+                <div class="input-group" id="custom-url-group" style="display: none;">
+                    <input type="text" id="custom-url" placeholder="ws://localhost:8080" value="">
                 </div>
                 <button id="start-btn" class="button button-primary">Join Game</button>
             </div>
@@ -52,11 +58,26 @@ export class UIManager {
     const startBtn = document.getElementById("start-btn");
     const nameInput = document.getElementById("player-name");
     const roomSelect = document.getElementById("room-id");
+    const customUrlGroup = document.getElementById("custom-url-group");
+    const customUrlInput = document.getElementById("custom-url");
+
+    roomSelect.onchange = () => {
+      customUrlGroup.style.display =
+        roomSelect.value === "custom" ? "block" : "none";
+    };
 
     startBtn.onclick = () => {
-      const name = nameInput.value.trim() || "Player";
+      const name = nameInput.value.trim();
+      if (!name) {
+        this.showError("Please enter a name.");
+        return;
+      }
       const room = roomSelect.value;
-      this.game.connect(name, room);
+      let customURL = null;
+      if (room === "local") customURL = "localhost:8080";
+      else if (room === "custom") customURL = customUrlInput.value.trim();
+
+      this.game.connect(name, "default", customURL);
     };
   }
 
@@ -76,34 +97,20 @@ export class UIManager {
     const hud = document.createElement("div");
     hud.className = "hud";
     hud.innerHTML = `
+            <div class="hud-top-left">
+                <div class="debug-panel glass">
+                    <div class="debug-item" id="debug-coords">0, 0</div>
+                    <div class="debug-item" id="debug-metrics">TPS: 0 | Entities: 0</div>
+                    <div class="debug-item" id="debug-ping">Ping: 0ms</div>
+                </div>
+            </div>
             <div class="hud-top-right">
                 <div class="leaderboard glass" id="leaderboard">
                     <h3>Leaderboard</h3>
                     <div id="leaderboard-list"></div>
                 </div>
-                <button id="settings-btn" class="button button-icon glass" style="margin-top: 12px; width: 100%;">
-                    Settings
-                </button>
-            </div>
-            <div id="settings-modal" class="modal glass" style="display: none;">
-                <div class="modal-content">
-                    <h2>Settings</h2>
-                    <div class="setting-item">
-                        <label>Graphics Quality</label>
-                        <select>
-                            <option>Premium</option>
-                            <option>Balanced</option>
-                            <option>Performance</option>
-                        </select>
-                    </div>
-                    <button class="button button-primary" id="close-settings">Close</button>
-                </div>
             </div>
             <div class="hud-bottom-center">
-                <div class="debug-panel">
-                    <div class="debug-item" id="debug-coords">0, 0</div>
-                    <div class="debug-item" id="debug-metrics">Tick: 0ms | Entities: 0</div>
-                </div>
                 <div class="stats-bar glass">
                     <div class="stat"><span class="label">SCORE</span> <span id="stat-score">0</span></div>
                     <div class="stat"><span class="label">KILLS</span> <span id="stat-kills">0</span></div>
@@ -111,18 +118,6 @@ export class UIManager {
             </div>
         `;
     this.container.appendChild(hud);
-
-    const settingsBtn = document.getElementById("settings-btn");
-    const settingsModal = document.getElementById("settings-modal");
-    const closeSettings = document.getElementById("close-settings");
-
-    settingsBtn.onclick = () => {
-      settingsModal.style.display = "block";
-    };
-
-    closeSettings.onclick = () => {
-      settingsModal.style.display = "none";
-    };
   }
 
   showError(message) {

@@ -31,5 +31,14 @@ export class Bullet extends EntityBase {
 
   update(deltaTime, deltaMS) {
     super.update(deltaTime, deltaMS);
+
+    // Add subtle trail
+    if (Math.random() > 0.3) {
+      this.manager.renderer.effects.spawnTrailParticle(
+        this.position.x,
+        this.position.y,
+        0xffffff,
+      );
+    }
   }
 }

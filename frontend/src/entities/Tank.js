@@ -43,6 +43,7 @@ export class Tank extends EntityBase {
     this.radius = config.VISUALS.TANK_RADIUS;
     this.barrelAngle = 0;
     this.targetBarrelAngle = 0;
+    this.barrelRecoil = 0;
 
     this.draw();
   }
@@ -155,6 +156,13 @@ export class Tank extends EntityBase {
     );
   }
 
+  triggerRecoil() {
+    this.barrelRecoil = 10;
+    if (this.isLocal) {
+      this.manager.renderer.shake(3);
+    }
+  }
+
   update(deltaTime, deltaMS) {
     super.update(deltaTime, deltaMS);
 
@@ -164,6 +172,16 @@ export class Tank extends EntityBase {
     while (diff < -Math.PI) diff += Math.PI * 2;
     this.barrelAngle += diff * 0.2 * deltaTime; // Slightly slower for smoothness
     this.barrel.rotation = this.barrelAngle;
+
+    // Recoil smoothing
+    if (this.barrelRecoil > 0) {
+      this.barrelRecoil *= Math.pow(0.8, deltaTime);
+      if (this.barrelRecoil < 0.1) this.barrelRecoil = 0;
+    }
+    this.barrel.position.set(
+      Math.cos(this.barrelAngle) * -this.barrelRecoil,
+      Math.sin(this.barrelAngle) * -this.barrelRecoil,
+    );
 
     // For local player, we apply the visual offset to hide reconciliation snaps
     if (this.isLocal) {
