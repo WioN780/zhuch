@@ -43,9 +43,10 @@ func (h *Hub) Run() {
 			h.mu.Unlock()
 
 			// Send initialization message to the client
-			initMsg, _ := json.Marshal(map[string]string{
+			initMsg, _ := json.Marshal(map[string]any{
 				"type":    "init",
 				"tank_id": client.TankID,
+				"config":  h.Game.Config,
 			})
 			client.Send <- initMsg
 
@@ -87,17 +88,23 @@ func (h *Hub) BroadcastGameState() {
 	// Iterate through clients and send their specific view
 	for client := range h.Clients {
 		var visibleEntities []engine.Entity
+		isDead := false
 
 		if tank, exists := tankMap[client.TankID]; exists {
 			// Filter entities by tank's view range
 			visibleEntities = h.Game.GetVisibleEntities(tank.GetPosition(), tank.ViewRange)
 		} else {
 			visibleEntities = []engine.Entity{}
+			isDead = true
 		}
 
 		packet := map[string]interface{}{
 			"entities": visibleEntities,
 			"metrics":  h.Game.Metrics,
+		}
+
+		if isDead {
+			packet["type"] = "dead"
 		}
 
 		state, err := json.Marshal(packet)

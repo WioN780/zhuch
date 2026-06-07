@@ -2,6 +2,8 @@ package socket
 
 import (
 	"log/slog"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 	"zhuch/pkg/engine"
@@ -77,6 +79,10 @@ func (m *Manager) GetRoom(id string) *Room {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.Rooms[id]
+}
+
+func (m *Manager) ListRooms() []*Room {
+	return slices.Collect(maps.Values(m.Rooms))
 }
 
 func (m *Manager) RemoveRoom(id string) {
