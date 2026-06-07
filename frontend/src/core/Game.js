@@ -3,6 +3,8 @@ import { Socket } from "./Socket.js";
 import { Renderer } from "../rendering/Renderer.js";
 import { UIManager } from "../ui/UIManager.js";
 import { InputManager } from "./InputManager.js";
+import { RoomController } from "./RoomController.js";
+import { CONFIG } from "./Config.js";
 
 export class Game {
   constructor() {
@@ -11,8 +13,12 @@ export class Game {
     this.renderer = null;
     this.ui = null;
     this.input = null;
+    this.roomController = null;
 
-    this.state = "INITIALIZING"; // INITIALIZING, MENU, CONNECTING, PLAYING, ERROR
+    // Current active config (starts with defaults, updated by server)
+    this.config = JSON.parse(JSON.stringify(CONFIG));
+
+    this.state = "INITIALIZING"; // INITIALIZING, MENU, CONNECTING, PLAYING, DEAD, ERROR
   }
 
   async initialize() {
@@ -20,7 +26,7 @@ export class Game {
     this.app = new Application();
     await this.app.init({
       resizeTo: window,
-      backgroundColor: 0x0a0a0a,
+      backgroundColor: this.config.VISUALS.BACKGROUND_COLOR,
       antialias: true,
       resolution: window.devicePixelRatio || 1,
       autoDensity: true,
@@ -33,6 +39,7 @@ export class Game {
     this.renderer = new Renderer(this);
     this.input = new InputManager(this);
     this.socket = new Socket(this);
+    this.roomController = new RoomController(this);
 
     // Set initial state
     this.setState("MENU");
@@ -41,6 +48,53 @@ export class Game {
     this.app.ticker.add((ticker) => {
       this.update(ticker.deltaTime, ticker.deltaMS);
     });
+  }
+
+  // Called when server sends 'init' or config update
+  applyServerConfig(serverConfig) {
+    if (!serverConfig) return;
+
+    // Map server keys to our internal config structure
+    // This handles both camelCase and snake_case from Go backend
+    if (serverConfig.WorldSize || serverConfig.world_size) {
+      this.config.WORLD.SIZE =
+        serverConfig.WorldSize || serverConfig.world_size;
+    }
+
+    const physics = this.config.PHYSICS;
+    physics.FRICTION =
+      serverConfig.Friction || serverConfig.friction || physics.FRICTION;
+    physics.ACCELERATION =
+      serverConfig.MoveAcceleration ||
+      serverConfig.move_acceleration ||
+      physics.ACCELERATION;
+    physics.MAX_SPEED =
+      serverConfig.MaxSpeed || serverConfig.max_speed || physics.MAX_SPEED;
+
+    console.log("Applied server config:", this.config);
+
+    // Notify renderer if world size changed
+    if (this.renderer) {
+      this.renderer.setupBackground();
+    }
+  }
+
+  onPlayerDeath() {
+    if (this.state === "PLAYING") {
+      this.setState("DEAD");
+    }
+  }
+
+  async respawn() {
+    const name = this.socket.playerName;
+    const room = this.socket.roomID;
+    const customURL = this.socket.customURL;
+
+    if (this.socket.ws) {
+      this.socket.ws.close();
+    }
+
+    await this.connect(name, room, customURL);
   }
 
   setState(newState) {
@@ -56,10 +110,10 @@ export class Game {
     }
   }
 
-  async connect(playerName, roomID = "default") {
+  async connect(playerName, roomID = "default", customURL = null) {
     this.setState("CONNECTING");
     try {
-      await this.socket.connect(playerName, roomID);
+      await this.socket.connect(playerName, roomID, customURL);
       this.setState("PLAYING");
     } catch (err) {
       console.error("Connection failed:", err);

@@ -12,15 +12,17 @@ export class Tank extends EntityBase {
     this.serverPosition = { x: 0, y: 0 };
     this.isServerPosSet = false;
 
+    const config = manager.renderer.game.config;
+
     // Visual Smoothing (Separate logical pos from rendered pos)
     this.visualOffset = { x: 0, y: 0 };
-    this.offsetBleed = 0.15; // 15% per frame
+    this.offsetBleed = config.SMOOTHING.OFFSET_BLEED;
 
-    // Configuration Parity
-    this.friction = 0.9;
-    this.acceleration = 1.5;
-    this.maxSpeed = 15.0;
-    this.weight = 10.0;
+    // Configuration Parity (Initialized from game config)
+    this.friction = config.PHYSICS.FRICTION;
+    this.acceleration = config.PHYSICS.ACCELERATION;
+    this.maxSpeed = config.PHYSICS.MAX_SPEED;
+    this.weight = config.PHYSICS.WEIGHT;
 
     // UI
     const style = new TextStyle({
@@ -38,9 +40,10 @@ export class Tank extends EntityBase {
     this.container.addChild(this.body);
     this.container.addChild(this.nameTag);
 
-    this.radius = 20;
+    this.radius = config.VISUALS.TANK_RADIUS;
     this.barrelAngle = 0;
     this.targetBarrelAngle = 0;
+    this.barrelRecoil = 0;
 
     this.draw();
   }
@@ -77,11 +80,15 @@ export class Tank extends EntityBase {
     const dy = serverState.pos.y - this.position.y;
     const distSq = dx * dx + dy * dy;
 
+    // Thresholds:
+    // < 4 pixels: Ignore minor floating point drift
+    // 4-2500 pixels: Reconcile with visual offset
+    // > 2500 pixels: Hard snap (teleport)
     if (distSq > 2500) {
       this.position.x = serverState.pos.x;
       this.position.y = serverState.pos.y;
       this.visualOffset = { x: 0, y: 0 };
-    } else if (distSq > 1) {
+    } else if (distSq > 4) {
       this.visualOffset.x = this.position.x - serverState.pos.x;
       this.visualOffset.y = this.position.y - serverState.pos.y;
 
@@ -90,7 +97,13 @@ export class Tank extends EntityBase {
     }
 
     this.serverPosition = { ...serverState.pos };
-    this.velocity = { ...serverState.vel };
+
+    // Only snap velocity if the difference is significant
+    const vdx = serverState.vel.x - this.velocity.x;
+    const vdy = serverState.vel.y - this.velocity.y;
+    if (vdx * vdx + vdy * vdy > 1) {
+      this.velocity = { ...serverState.vel };
+    }
   }
 
   // Instant local response
@@ -116,8 +129,9 @@ export class Tank extends EntityBase {
       inputVector.y /= len;
     }
 
-    // Physics Parity: Use time-scaled ratios to match 20Hz server
-    const ratio = deltaMS / 50;
+    // Physics Parity: Use time-scaled ratios to match server tick rate
+    const ratio =
+      deltaMS / this.manager.renderer.game.config.PHYSICS.SERVER_TICK_MS;
 
     // 1. Acceleration
     this.velocity.x += inputVector.x * this.acceleration * ratio;
@@ -152,6 +166,18 @@ export class Tank extends EntityBase {
     );
   }
 
+  triggerRecoil() {
+    this.barrelRecoil = 10;
+    if (this.isLocal) {
+      this.manager.renderer.shake(3);
+    }
+  }
+
+  syncRotation() {
+    // We handle rotation internally in update() for smoothness
+    // and to avoid doubling with the container.
+  }
+
   update(deltaTime, deltaMS) {
     super.update(deltaTime, deltaMS);
 
@@ -159,22 +185,22 @@ export class Tank extends EntityBase {
     let diff = this.targetBarrelAngle - this.barrelAngle;
     while (diff > Math.PI) diff -= Math.PI * 2;
     while (diff < -Math.PI) diff += Math.PI * 2;
-    this.barrelAngle += diff * 0.3 * deltaTime;
+    this.barrelAngle += diff * 0.2 * deltaTime; // Slightly slower for smoothness
     this.barrel.rotation = this.barrelAngle;
 
-    // for local
-    if (this.isLocal) {
-      this.container.position.set(
-        this.position.x + this.visualOffset.x,
-        this.position.y + this.visualOffset.y,
-      );
+    // Recoil smoothing
+    if (this.barrelRecoil > 0) {
+      this.barrelRecoil *= Math.pow(0.8, deltaTime);
+      if (this.barrelRecoil < 0.1) this.barrelRecoil = 0;
+    }
+    this.barrel.position.set(
+      Math.cos(this.barrelAngle) * -this.barrelRecoil,
+      Math.sin(this.barrelAngle) * -this.barrelRecoil,
+    );
 
-      // Gradually melt the visual offset
-      this.visualOffset.x *= 1 - this.offsetBleed;
-      this.visualOffset.y *= 1 - this.offsetBleed;
-
-      if (Math.abs(this.visualOffset.x) < 0.05) this.visualOffset.x = 0;
-      if (Math.abs(this.visualOffset.y) < 0.05) this.visualOffset.y = 0;
+    // For non-local tanks, ensure barrel rotation matches the interpolated rotation
+    if (!this.isLocal) {
+      this.barrel.rotation = this.rotation;
     }
   }
 

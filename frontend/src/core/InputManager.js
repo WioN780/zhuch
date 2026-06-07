@@ -8,7 +8,7 @@ export class InputManager {
     // Throttling for network efficiency
     this.lastSentInput = null;
     this.lastSendTimestamp = 0;
-    this.sendInterval = 50; // 20Hz (matches server)
+    this.sendInterval = 30; // ~33Hz (Faster than server 20Hz to ensure fresh data)
 
     window.addEventListener("keydown", (e) => this.keys.add(e.code));
     window.addEventListener("keyup", (e) => this.keys.delete(e.code));
@@ -61,15 +61,19 @@ export class InputManager {
       );
       const dx = worldMousePos.x - playerTank.position.x;
       const dy = worldMousePos.y - playerTank.position.y;
+
+      // Update the local target angle
       playerTank.targetBarrelAngle = Math.atan2(dy, dx);
-      orientation = playerTank.barrelAngle;
+
+      // Use the raw target angle for orientation to avoid smoothing lag on server
+      orientation = playerTank.targetBarrelAngle;
     }
 
     // THROTTLED INPUT SENDING
     const now = performance.now();
     const currentInput = {
       type: this.isMouseDown ? "fire" : "input",
-      input_vector: inputVector,
+      input_vector: { x: inputVector.x, y: inputVector.y }, // Explicitly match Go's expected structure
       orientation: orientation,
     };
 

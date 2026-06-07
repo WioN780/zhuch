@@ -53,6 +53,16 @@ export class EntityManager {
       entity.id = data.id || data.ID;
       entity.reset?.();
     }
+
+    // TRIGGER RECOIL: If it's a new bullet, trigger recoil on the owner tank
+    if (type === "bullet") {
+      const ownerID = data.owner_id || data.OwnerID;
+      const owner = this.entities.get(ownerID);
+      if (owner && owner.triggerRecoil) {
+        owner.triggerRecoil();
+      }
+    }
+
     return entity;
   }
 
@@ -73,6 +83,27 @@ export class EntityManager {
   }
 
   recycleEntity(entity) {
+    // If entity has 0 health, it likely died - spawn explosion
+    if (entity.health <= 0 && entity.initialized) {
+      let color = 0xffffff;
+      if (entity.type === "square") color = 0x4fc3f7;
+      else if (entity.type === "triangle") color = 0xff8a65;
+      else if (entity.type === "pentagon") color = 0x9575cd;
+      else if (entity.isBullet) color = 0xffffff;
+      else color = 0x555555; // Tanks or others
+
+      this.renderer.effects.spawnExplosion(
+        entity.position.x,
+        entity.position.y,
+        color,
+        entity.isBullet ? 5 : 15,
+      );
+
+      if (!entity.isBullet) {
+        this.renderer.shake(entity.radius ? entity.radius / 2 : 5);
+      }
+    }
+
     entity.container.parent?.removeChild(entity.container);
     let type = "food";
     if (entity instanceof Tank) type = "tank";

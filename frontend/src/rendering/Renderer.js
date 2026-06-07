@@ -1,6 +1,7 @@
 import { Container, Graphics } from "pixi.js";
 import { Camera } from "./Camera.js";
 import { EntityManager } from "../entities/EntityManager.js";
+import { EffectsManager } from "./EffectsManager.js";
 
 export class Renderer {
   constructor(game) {
@@ -23,21 +24,33 @@ export class Renderer {
 
     this.camera = new Camera(this);
     this.entityManager = new EntityManager(this);
+    this.effects = new EffectsManager(this);
+
+    // Screen Shake
+    this.shakeAmount = 0;
+    this.shakeDecay = 0.9;
+
+    const config = game.config;
 
     // TPS Tracking
     this.lastUpdateTimestamp = performance.now();
     this.currentTPS = 0;
-    this.tpsFilter = 0.9; // Smoothing factor
+    this.tpsFilter = config.SMOOTHING.TPS_FILTER;
 
     this.setupBackground();
   }
 
   setupBackground() {
-    const grid = new Container();
-    this.backgroundLayer.addChild(grid);
+    if (this.backgroundGrid) {
+      this.backgroundGrid.destroy({ children: true });
+    }
 
-    const size = 2000;
-    const spacing = 100;
+    this.backgroundGrid = new Container();
+    this.backgroundLayer.addChild(this.backgroundGrid);
+
+    const config = this.game.config.WORLD;
+    const size = config.SIZE;
+    const spacing = config.GRID_SPACING;
 
     const graphics = new Graphics();
     graphics.clear();
@@ -62,7 +75,7 @@ export class Renderer {
     graphics.closePath();
     graphics.stroke({ color: 0xffffff, width: 2, alpha: 0.1 });
 
-    grid.addChild(graphics);
+    this.backgroundGrid.addChild(graphics);
   }
 
   setPlayerID(id) {
@@ -86,7 +99,12 @@ export class Renderer {
     // Follow player tank
     const playerTank = this.entityManager.getEntity(this.playerID);
     if (playerTank) {
-      this.camera.setTarget(playerTank.position);
+      // Follow visual position for local player to keep them centered during reconciliation
+      const visualPos = {
+        x: playerTank.position.x + (playerTank.visualOffset?.x || 0),
+        y: playerTank.position.y + (playerTank.visualOffset?.y || 0),
+      };
+      this.camera.setTarget(visualPos);
     }
 
     if (metrics) {
@@ -98,24 +116,36 @@ export class Renderer {
   }
 
   updateMetricsUI(metrics) {
-    const el = document.getElementById("debug-metrics");
-    if (!el) return;
+    const metricsEl = document.getElementById("debug-metrics");
+    if (metricsEl) {
+      const count =
+        metrics.entity_count !== undefined
+          ? metrics.entity_count
+          : metrics.EntityCount;
+      const tps = Math.round(this.currentTPS);
+      metricsEl.innerText = `TPS: ${tps} | Entities: ${count}`;
+    }
 
-    const count =
-      metrics.entity_count !== undefined
-        ? metrics.entity_count
-        : metrics.EntityCount;
-    const tps = Math.round(this.currentTPS);
+    const pingEl = document.getElementById("debug-ping");
+    if (pingEl && this.game.socket) {
+      const ping = Math.round(this.game.socket.latency * 2); // Round trip
+      pingEl.innerText = `Ping: ${ping}ms`;
+    }
+  }
 
-    el.innerText = `TPS: ${tps} | Entities: ${count}`;
+  shake(amount) {
+    this.shakeAmount = Math.max(this.shakeAmount, amount);
   }
 
   update(deltaTime, deltaMS) {
     this.camera.update(deltaTime);
     this.entityManager.update(deltaTime, deltaMS);
+    this.effects.update(deltaTime);
 
     // Update debug coordinates UI
     const playerTank = this.entityManager.getEntity(this.playerID);
+    let cameraTargetPos = { x: this.camera.x, y: this.camera.y };
+
     if (playerTank) {
       const debugEl = document.getElementById("debug-coords");
       if (debugEl) {
@@ -125,8 +155,22 @@ export class Renderer {
       }
     }
 
+    // Apply screen shake
+    let shakeX = 0;
+    let shakeY = 0;
+    if (this.shakeAmount > 0.1) {
+      shakeX = (Math.random() - 0.5) * this.shakeAmount;
+      shakeY = (Math.random() - 0.5) * this.shakeAmount;
+      this.shakeAmount *= this.shakeDecay;
+    } else {
+      this.shakeAmount = 0;
+    }
+
     // Apply camera transform to worldContainer
-    this.worldContainer.position.set(this.camera.x, this.camera.y);
+    this.worldContainer.position.set(
+      this.camera.x + shakeX,
+      this.camera.y + shakeY,
+    );
     this.worldContainer.scale.set(this.camera.zoom);
   }
 

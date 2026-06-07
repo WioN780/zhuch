@@ -18,23 +18,19 @@ func main() {
 	// Create a default room at startup
 	manager.CreateRoom("default", engine.DefaultConfig())
 
-	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		socket.ServeWs(manager, w, r)
-	})
-
-	http.HandleFunc("/create", func(w http.ResponseWriter, r *http.Request) {
-		socket.HandleCreateRoom(manager, w, r)
-	})
-
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
+	ctrl := socket.NewRoomController(manager)
+
+	http.HandleFunc("/rooms", ctrl.HandleListRooms)
+	http.HandleFunc("/create", ctrl.HandleCreate)
+	http.HandleFunc("/ws", ctrl.HandleWebSocket)
+
 	// for cloud
 	addr := "0.0.0.0:" + port
-
-	// addr := "localhost:" + port
 
 	slog.Info("server starting", "addr", addr)
 

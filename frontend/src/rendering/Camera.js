@@ -1,5 +1,3 @@
-import { gsap } from "gsap";
-
 export class Camera {
   constructor(renderer) {
     this.renderer = renderer;

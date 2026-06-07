@@ -9,16 +9,30 @@ export class Socket {
     this.lastPingTime = 0;
   }
 
-  async connect(playerName, roomID) {
+  async connect(playerName, roomID, customURL = null) {
+    this.playerName = playerName;
+    this.roomID = roomID;
+    this.customURL = customURL;
+
     return new Promise((resolve, reject) => {
-      const isLocal =
-        window.location.hostname === "localhost" ||
-        window.location.hostname === "127.0.0.1";
-      const protocol = isLocal ? "ws:" : "wss:";
-      const backendHost = isLocal
-        ? "localhost:8080"
-        : "zhuch-production.up.railway.app";
-      const url = `${protocol}//${backendHost}/ws?room=${roomID}`;
+      let url;
+
+      if (customURL) {
+        // Handle custom URL entry
+        url = customURL.startsWith("ws") ? customURL : `ws://${customURL}`;
+        if (!url.includes("/ws")) {
+          const urlObj = new URL(url.includes("://") ? url : `ws://${url}`);
+          if (urlObj.pathname === "/") url += "/ws";
+        }
+        // Ensure roomID is attached
+        if (!url.includes("room=")) {
+          url += (url.includes("?") ? "&" : "?") + `room=${roomID}`;
+        }
+      } else {
+        // Default to Production Railway Server
+        // Always use wss for production
+        url = `wss://zhuch-production.up.railway.app/ws?room=${roomID}`;
+      }
 
       console.log("Connecting to WebSocket:", url);
       this.ws = new WebSocket(url);
@@ -52,7 +66,6 @@ export class Socket {
   }
 
   startPingLoop() {
-    // Simple ping loop if the backend supports it (or just for timing)
     setInterval(() => {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         this.lastPingTime = performance.now();
@@ -63,7 +76,14 @@ export class Socket {
 
   handleMessage(data) {
     if (data.type === "pong") {
-      this.latency = (performance.now() - this.lastPingTime) / 2;
+      // Calculate round-trip time and store it as one-way latency for the HUD
+      const rtt = performance.now() - this.lastPingTime;
+      this.latency = rtt / 2;
+      return;
+    }
+
+    if (data.type === "dead") {
+      this.game.onPlayerDeath();
       return;
     }
 
@@ -76,8 +96,7 @@ export class Socket {
 
     if (data.type === "init") {
       this.game.renderer.setPlayerID(data.tank_id);
-      this.game.config = data.config; // Store server config for prediction parity
-      console.log("Game config received:", this.game.config);
+      this.game.applyServerConfig(data.config);
       return;
     }
 

@@ -85,6 +85,11 @@ export class Food extends EntityBase {
     if (redraw) this.draw();
   }
 
+  syncRotation() {
+    // Food rotation is purely client-side in this game,
+    // so we don't want to sync it from the server's default 0.
+  }
+
   update(deltaTime) {
     super.update(deltaTime);
     this.container.rotation += this.rotationSpeed * deltaTime;
