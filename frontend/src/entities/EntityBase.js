@@ -10,10 +10,17 @@ export class EntityBase {
     this.velocity = { x: 0, y: 0 };
     this.rotation = 0;
 
+    // Visual Smoothing (Hides snaps from server updates)
+    this.visualOffset = { x: 0, y: 0 };
+    this.offsetBleed = 0.15;
+
+    const config = manager.renderer.game.config;
+
     this.stateBuffer = [];
-    this.interpolationDelay = 100; // ms behind server
+    this.interpolationDelay = config.SMOOTHING.TANK_INTERPOLATION_DELAY;
 
     this.initialized = false;
+    this.isBullet = false;
     this.lastHealthPct = -1;
 
     this.healthBar = new Container();
@@ -49,21 +56,50 @@ export class EntityBase {
     };
 
     if (!this.initialized) {
+      const config = this.manager.renderer.game.config;
+      this.isBullet = newState.ownerID !== undefined;
+
+      // Bullets stay on server-time (0 delay) for maximum "authority"
+      // Remote tanks stay on a delay for smooth interpolation
+      this.interpolationDelay = this.isBullet
+        ? 0
+        : config.SMOOTHING.TANK_INTERPOLATION_DELAY;
+
       this.position = { ...newState.pos };
       this.velocity = { ...newState.vel };
       this.rotation = newState.rotation;
+
+      // Set timestamp to 'now' so that interpolationDelay-based rendering
+      // initially treats this as a 'future' state and extrapolates forward
+      // from it, preventing the warp-back.
+      this.stateBuffer.push({
+        ...newState,
+        timestamp: performance.now(),
+      });
+
       this.initialized = true;
     }
 
-    if (this.isLocal) {
-      this.onServerUpdate(newState);
-    } else {
+    // Capture visual offset for smoothing the correction if we are on server-time (bullets)
+    if (this.isBullet && !this.isLocal) {
+      this.visualOffset.x = this.position.x - newState.pos.x;
+      this.visualOffset.y = this.position.y - newState.pos.y;
+      this.position = { ...newState.pos };
+    }
+
+    // Don't add to buffer if it's the local player (they use prediction)
+    if (!this.isLocal) {
       this.stateBuffer.push(newState);
       if (this.stateBuffer.length > 20) this.stateBuffer.shift();
     }
 
+    if (this.isLocal) {
+      this.onServerUpdate(newState);
+    }
+
     this.health = newState.health;
     this.maxHealth = newState.maxHealth;
+    this.velocity = { ...newState.vel }; // Store latest velocity for extrapolation
     this.updateHealthBar();
   }
 
@@ -75,70 +111,92 @@ export class EntityBase {
     if (this.isLocal) {
       this.updateLocal(deltaTime, deltaMS);
     } else {
-      this.updateInterpolation();
+      this.updateInterpolation(deltaMS, deltaTime);
     }
 
-    // Only apply default position if NOT local
-    if (!this.isLocal) {
-      this.syncContainer();
-    }
+    // Sync visuals
+    this.syncContainer(deltaTime);
   }
 
-  syncContainer() {
-    this.container.position.set(this.position.x, this.position.y);
+  syncContainer(deltaTime) {
+    // Apply visual offset smoothing (bleed)
+    // Frame-rate independent bleed
+    const bleed = 1 - Math.pow(1 - this.offsetBleed, deltaTime || 1);
+    this.visualOffset.x *= 1 - bleed;
+    this.visualOffset.y *= 1 - bleed;
+
+    if (Math.abs(this.visualOffset.x) < 0.01) this.visualOffset.x = 0;
+    if (Math.abs(this.visualOffset.y) < 0.01) this.visualOffset.y = 0;
+
+    this.container.position.set(
+      this.position.x + this.visualOffset.x,
+      this.position.y + this.visualOffset.y,
+    );
+    this.container.rotation = this.rotation;
   }
 
-  updateInterpolation() {
-    if (this.stateBuffer.length < 1) return;
-
-    const isLocalBullet =
-      this.stateBuffer[this.stateBuffer.length - 1].ownerID ===
-      this.manager.renderer.playerID;
-
-    if (isLocalBullet) {
-      const latest = this.stateBuffer[this.stateBuffer.length - 1];
-      this.position = { ...latest.pos };
-      this.rotation = latest.rotation;
-      return;
-    }
-
-    if (this.stateBuffer.length < 2) return;
+  updateInterpolation(deltaMS, deltaTime) {
+    if (this.stateBuffer.length === 0) return;
 
     const renderTime = performance.now() - this.interpolationDelay;
-    let i = 0;
-    for (; i < this.stateBuffer.length - 1; i++) {
-      if (this.stateBuffer[i + 1].timestamp > renderTime) break;
+
+    // If we're ahead of the oldest state but behind the newest, interpolate
+    if (
+      this.stateBuffer.length >= 2 &&
+      renderTime >= this.stateBuffer[0].timestamp &&
+      this.interpolationDelay > 0
+    ) {
+      let i = 0;
+      for (; i < this.stateBuffer.length - 1; i++) {
+        if (this.stateBuffer[i + 1].timestamp > renderTime) break;
+      }
+
+      const stateA = this.stateBuffer[i];
+      const stateB = this.stateBuffer[i + 1];
+
+      if (stateA && stateB && renderTime <= stateB.timestamp) {
+        const lerpFactor =
+          (renderTime - stateA.timestamp) /
+          (stateB.timestamp - stateA.timestamp);
+
+        this.position.x =
+          stateA.pos.x + (stateB.pos.x - stateA.pos.x) * lerpFactor;
+        this.position.y =
+          stateA.pos.y + (stateB.pos.y - stateA.pos.y) * lerpFactor;
+
+        let diff = stateB.rotation - stateA.rotation;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        this.rotation = stateA.rotation + diff * lerpFactor;
+        return;
+      }
     }
 
-    const stateA = this.stateBuffer[i];
-    const stateB = this.stateBuffer[i + 1];
+    // BUFFER UNDERRUN or ZERO-DELAY (Bullets): Extrapolate using last known velocity
+    const latest = this.stateBuffer[this.stateBuffer.length - 1];
+    const config = this.manager.renderer.game.config;
 
+    // If it's a very fresh state and we have a delay, just snap
     if (
-      stateA &&
-      stateB &&
-      renderTime >= stateA.timestamp &&
-      renderTime <= stateB.timestamp
+      Math.abs(renderTime - latest.timestamp) < 16 &&
+      this.interpolationDelay > 0
     ) {
-      const lerpFactor =
-        (renderTime - stateA.timestamp) / (stateB.timestamp - stateA.timestamp);
-      this.position.x =
-        stateA.pos.x + (stateB.pos.x - stateA.pos.x) * lerpFactor;
-      this.position.y =
-        stateA.pos.y + (stateB.pos.y - stateA.pos.y) * lerpFactor;
-
-      let diff = stateB.rotation - stateA.rotation;
-      while (diff > Math.PI) diff -= Math.PI * 2;
-      while (diff < -Math.PI) diff += Math.PI * 2;
-      this.rotation = stateA.rotation + diff * lerpFactor;
-    } else if (stateB && renderTime > stateB.timestamp) {
-      this.position = { ...stateB.pos };
-      this.rotation = stateB.rotation;
+      this.position.x = latest.pos.x;
+      this.position.y = latest.pos.y;
+      this.rotation = latest.rotation;
+    } else {
+      // Extrapolate forward
+      const ratio = deltaMS / config.PHYSICS.SERVER_TICK_MS;
+      this.position.x += this.velocity.x * ratio;
+      this.position.y += this.velocity.y * ratio;
+      this.rotation = latest.rotation;
     }
   }
 
   updateLocal(deltaTime, deltaMS) {}
 
   updateHealthBar() {
+    const config = this.manager.renderer.game.config.VISUALS.HEALTH_BAR;
     if (this.health === undefined || this.health >= this.maxHealth) {
       this.healthBar.visible = false;
       return;
@@ -147,16 +205,16 @@ export class EntityBase {
     if (this.lastHealthPct === pct) return;
     this.lastHealthPct = pct;
     this.healthBar.visible = true;
-    const width = 40;
-    const height = 4;
-    const yOffset = 35;
+
+    const { WIDTH, HEIGHT, OFFSET_Y } = config;
+
     this.healthBarBg
       .clear()
-      .rect(-width / 2, yOffset, width, height)
+      .rect(-WIDTH / 2, OFFSET_Y, WIDTH, HEIGHT)
       .fill({ color: 0x000000, alpha: 0.5 });
     this.healthBarFill
       .clear()
-      .rect(-width / 2, yOffset, width * pct, height)
+      .rect(-WIDTH / 2, OFFSET_Y, WIDTH * pct, HEIGHT)
       .fill({ color: 0x81c784 });
   }
 

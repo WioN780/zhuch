@@ -24,20 +24,27 @@ export class Renderer {
     this.camera = new Camera(this);
     this.entityManager = new EntityManager(this);
 
+    const config = game.config;
+
     // TPS Tracking
     this.lastUpdateTimestamp = performance.now();
     this.currentTPS = 0;
-    this.tpsFilter = 0.9; // Smoothing factor
+    this.tpsFilter = config.SMOOTHING.TPS_FILTER;
 
     this.setupBackground();
   }
 
   setupBackground() {
-    const grid = new Container();
-    this.backgroundLayer.addChild(grid);
+    if (this.backgroundGrid) {
+      this.backgroundGrid.destroy({ children: true });
+    }
 
-    const size = 2000;
-    const spacing = 100;
+    this.backgroundGrid = new Container();
+    this.backgroundLayer.addChild(this.backgroundGrid);
+
+    const config = this.game.config.WORLD;
+    const size = config.SIZE;
+    const spacing = config.GRID_SPACING;
 
     const graphics = new Graphics();
     graphics.clear();
@@ -62,7 +69,7 @@ export class Renderer {
     graphics.closePath();
     graphics.stroke({ color: 0xffffff, width: 2, alpha: 0.1 });
 
-    grid.addChild(graphics);
+    this.backgroundGrid.addChild(graphics);
   }
 
   setPlayerID(id) {
@@ -86,7 +93,12 @@ export class Renderer {
     // Follow player tank
     const playerTank = this.entityManager.getEntity(this.playerID);
     if (playerTank) {
-      this.camera.setTarget(playerTank.position);
+      // Follow visual position for local player to keep them centered during reconciliation
+      const visualPos = {
+        x: playerTank.position.x + (playerTank.visualOffset?.x || 0),
+        y: playerTank.position.y + (playerTank.visualOffset?.y || 0),
+      };
+      this.camera.setTarget(visualPos);
     }
 
     if (metrics) {

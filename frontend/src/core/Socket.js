@@ -16,7 +16,7 @@ export class Socket {
         window.location.hostname === "127.0.0.1";
       const protocol = isLocal ? "ws:" : "wss:";
       const backendHost = isLocal
-        ? "localhost:8080"
+        ? "zhuch-production.up.railway.app"
         : "zhuch-production.up.railway.app";
       const url = `${protocol}//${backendHost}/ws?room=${roomID}`;
 
@@ -76,8 +76,7 @@ export class Socket {
 
     if (data.type === "init") {
       this.game.renderer.setPlayerID(data.tank_id);
-      this.game.config = data.config; // Store server config for prediction parity
-      console.log("Game config received:", this.game.config);
+      this.game.applyServerConfig(data.config);
       return;
     }
 

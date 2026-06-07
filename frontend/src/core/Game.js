@@ -3,6 +3,7 @@ import { Socket } from "./Socket.js";
 import { Renderer } from "../rendering/Renderer.js";
 import { UIManager } from "../ui/UIManager.js";
 import { InputManager } from "./InputManager.js";
+import { CONFIG } from "./Config.js";
 
 export class Game {
   constructor() {
@@ -12,6 +13,9 @@ export class Game {
     this.ui = null;
     this.input = null;
 
+    // Current active config (starts with defaults, updated by server)
+    this.config = JSON.parse(JSON.stringify(CONFIG));
+
     this.state = "INITIALIZING"; // INITIALIZING, MENU, CONNECTING, PLAYING, ERROR
   }
 
@@ -20,7 +24,7 @@ export class Game {
     this.app = new Application();
     await this.app.init({
       resizeTo: window,
-      backgroundColor: 0x0a0a0a,
+      backgroundColor: this.config.VISUALS.BACKGROUND_COLOR,
       antialias: true,
       resolution: window.devicePixelRatio || 1,
       autoDensity: true,
@@ -41,6 +45,35 @@ export class Game {
     this.app.ticker.add((ticker) => {
       this.update(ticker.deltaTime, ticker.deltaMS);
     });
+  }
+
+  // Called when server sends 'init' or config update
+  applyServerConfig(serverConfig) {
+    if (!serverConfig) return;
+
+    // Map server keys to our internal config structure
+    // This handles both camelCase and snake_case from Go backend
+    if (serverConfig.WorldSize || serverConfig.world_size) {
+      this.config.WORLD.SIZE =
+        serverConfig.WorldSize || serverConfig.world_size;
+    }
+
+    const physics = this.config.PHYSICS;
+    physics.FRICTION =
+      serverConfig.Friction || serverConfig.friction || physics.FRICTION;
+    physics.ACCELERATION =
+      serverConfig.MoveAcceleration ||
+      serverConfig.move_acceleration ||
+      physics.ACCELERATION;
+    physics.MAX_SPEED =
+      serverConfig.MaxSpeed || serverConfig.max_speed || physics.MAX_SPEED;
+
+    console.log("Applied server config:", this.config);
+
+    // Notify renderer if world size changed
+    if (this.renderer) {
+      this.renderer.setupBackground();
+    }
   }
 
   setState(newState) {

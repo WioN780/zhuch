@@ -12,15 +12,17 @@ export class Tank extends EntityBase {
     this.serverPosition = { x: 0, y: 0 };
     this.isServerPosSet = false;
 
+    const config = manager.renderer.game.config;
+
     // Visual Smoothing (Separate logical pos from rendered pos)
     this.visualOffset = { x: 0, y: 0 };
-    this.offsetBleed = 0.15; // 15% per frame
+    this.offsetBleed = config.SMOOTHING.OFFSET_BLEED;
 
-    // Configuration Parity
-    this.friction = 0.9;
-    this.acceleration = 1.5;
-    this.maxSpeed = 15.0;
-    this.weight = 10.0;
+    // Configuration Parity (Initialized from game config)
+    this.friction = config.PHYSICS.FRICTION;
+    this.acceleration = config.PHYSICS.ACCELERATION;
+    this.maxSpeed = config.PHYSICS.MAX_SPEED;
+    this.weight = config.PHYSICS.WEIGHT;
 
     // UI
     const style = new TextStyle({
@@ -38,7 +40,7 @@ export class Tank extends EntityBase {
     this.container.addChild(this.body);
     this.container.addChild(this.nameTag);
 
-    this.radius = 20;
+    this.radius = config.VISUALS.TANK_RADIUS;
     this.barrelAngle = 0;
     this.targetBarrelAngle = 0;
 
@@ -116,8 +118,9 @@ export class Tank extends EntityBase {
       inputVector.y /= len;
     }
 
-    // Physics Parity: Use time-scaled ratios to match 20Hz server
-    const ratio = deltaMS / 50;
+    // Physics Parity: Use time-scaled ratios to match server tick rate
+    const ratio =
+      deltaMS / this.manager.renderer.game.config.PHYSICS.SERVER_TICK_MS;
 
     // 1. Acceleration
     this.velocity.x += inputVector.x * this.acceleration * ratio;
@@ -159,22 +162,27 @@ export class Tank extends EntityBase {
     let diff = this.targetBarrelAngle - this.barrelAngle;
     while (diff > Math.PI) diff -= Math.PI * 2;
     while (diff < -Math.PI) diff += Math.PI * 2;
-    this.barrelAngle += diff * 0.3 * deltaTime;
+    this.barrelAngle += diff * 0.2 * deltaTime; // Slightly slower for smoothness
     this.barrel.rotation = this.barrelAngle;
 
-    // for local
+    // For local player, we apply the visual offset to hide reconciliation snaps
     if (this.isLocal) {
       this.container.position.set(
         this.position.x + this.visualOffset.x,
         this.position.y + this.visualOffset.y,
       );
 
-      // Gradually melt the visual offset
-      this.visualOffset.x *= 1 - this.offsetBleed;
-      this.visualOffset.y *= 1 - this.offsetBleed;
+      // Gradually melt the visual offset (smoother bleed)
+      const bleed = 1 - Math.pow(1 - this.offsetBleed, deltaTime);
+      this.visualOffset.x *= 1 - bleed;
+      this.visualOffset.y *= 1 - bleed;
 
-      if (Math.abs(this.visualOffset.x) < 0.05) this.visualOffset.x = 0;
-      if (Math.abs(this.visualOffset.y) < 0.05) this.visualOffset.y = 0;
+      if (Math.abs(this.visualOffset.x) < 0.01) this.visualOffset.x = 0;
+      if (Math.abs(this.visualOffset.y) < 0.01) this.visualOffset.y = 0;
+    } else {
+      // For non-local tanks, syncContainer in EntityBase handles it,
+      // but we need to ensure barrel rotation is updated if it's not part of base rotation
+      this.barrel.rotation = this.rotation;
     }
   }
 
