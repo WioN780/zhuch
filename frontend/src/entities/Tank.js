@@ -80,11 +80,15 @@ export class Tank extends EntityBase {
     const dy = serverState.pos.y - this.position.y;
     const distSq = dx * dx + dy * dy;
 
+    // Thresholds:
+    // < 4 pixels: Ignore minor floating point drift
+    // 4-2500 pixels: Reconcile with visual offset
+    // > 2500 pixels: Hard snap (teleport)
     if (distSq > 2500) {
       this.position.x = serverState.pos.x;
       this.position.y = serverState.pos.y;
       this.visualOffset = { x: 0, y: 0 };
-    } else if (distSq > 1) {
+    } else if (distSq > 4) {
       this.visualOffset.x = this.position.x - serverState.pos.x;
       this.visualOffset.y = this.position.y - serverState.pos.y;
 
@@ -93,7 +97,13 @@ export class Tank extends EntityBase {
     }
 
     this.serverPosition = { ...serverState.pos };
-    this.velocity = { ...serverState.vel };
+
+    // Only snap velocity if the difference is significant
+    const vdx = serverState.vel.x - this.velocity.x;
+    const vdy = serverState.vel.y - this.velocity.y;
+    if (vdx * vdx + vdy * vdy > 1) {
+      this.velocity = { ...serverState.vel };
+    }
   }
 
   // Instant local response
@@ -163,6 +173,11 @@ export class Tank extends EntityBase {
     }
   }
 
+  syncRotation() {
+    // We handle rotation internally in update() for smoothness
+    // and to avoid doubling with the container.
+  }
+
   update(deltaTime, deltaMS) {
     super.update(deltaTime, deltaMS);
 
@@ -183,23 +198,8 @@ export class Tank extends EntityBase {
       Math.sin(this.barrelAngle) * -this.barrelRecoil,
     );
 
-    // For local player, we apply the visual offset to hide reconciliation snaps
-    if (this.isLocal) {
-      this.container.position.set(
-        this.position.x + this.visualOffset.x,
-        this.position.y + this.visualOffset.y,
-      );
-
-      // Gradually melt the visual offset (smoother bleed)
-      const bleed = 1 - Math.pow(1 - this.offsetBleed, deltaTime);
-      this.visualOffset.x *= 1 - bleed;
-      this.visualOffset.y *= 1 - bleed;
-
-      if (Math.abs(this.visualOffset.x) < 0.01) this.visualOffset.x = 0;
-      if (Math.abs(this.visualOffset.y) < 0.01) this.visualOffset.y = 0;
-    } else {
-      // For non-local tanks, syncContainer in EntityBase handles it,
-      // but we need to ensure barrel rotation is updated if it's not part of base rotation
+    // For non-local tanks, ensure barrel rotation matches the interpolated rotation
+    if (!this.isLocal) {
       this.barrel.rotation = this.rotation;
     }
   }

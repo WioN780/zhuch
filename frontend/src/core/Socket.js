@@ -10,6 +10,10 @@ export class Socket {
   }
 
   async connect(playerName, roomID, customURL = null) {
+    this.playerName = playerName;
+    this.roomID = roomID;
+    this.customURL = customURL;
+
     return new Promise((resolve, reject) => {
       let url;
 
@@ -19,6 +23,10 @@ export class Socket {
         if (!url.includes("/ws")) {
           const urlObj = new URL(url.includes("://") ? url : `ws://${url}`);
           if (urlObj.pathname === "/") url += "/ws";
+        }
+        // Ensure roomID is attached
+        if (!url.includes("room=")) {
+          url += (url.includes("?") ? "&" : "?") + `room=${roomID}`;
         }
       } else {
         // Default to Production Railway Server
@@ -71,6 +79,11 @@ export class Socket {
       // Calculate round-trip time and store it as one-way latency for the HUD
       const rtt = performance.now() - this.lastPingTime;
       this.latency = rtt / 2;
+      return;
+    }
+
+    if (data.type === "dead") {
+      this.game.onPlayerDeath();
       return;
     }
 

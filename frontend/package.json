@@ -9,9 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "pixi.js": "^8.0.0",
-    "gsap": "^3.12.5",
-    "lucide": "^0.363.0"
+    "pixi.js": "^8.0.0"
   },
   "devDependencies": {
     "vite": "^5.2.0"

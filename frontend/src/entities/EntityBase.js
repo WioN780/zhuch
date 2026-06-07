@@ -157,6 +157,10 @@ export class EntityBase {
       this.position.x + this.visualOffset.x,
       this.position.y + this.visualOffset.y,
     );
+    this.syncRotation();
+  }
+
+  syncRotation() {
     this.container.rotation = this.rotation;
   }
 

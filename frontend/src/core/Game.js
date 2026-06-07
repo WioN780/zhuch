@@ -3,6 +3,7 @@ import { Socket } from "./Socket.js";
 import { Renderer } from "../rendering/Renderer.js";
 import { UIManager } from "../ui/UIManager.js";
 import { InputManager } from "./InputManager.js";
+import { RoomController } from "./RoomController.js";
 import { CONFIG } from "./Config.js";
 
 export class Game {
@@ -12,11 +13,12 @@ export class Game {
     this.renderer = null;
     this.ui = null;
     this.input = null;
+    this.roomController = null;
 
     // Current active config (starts with defaults, updated by server)
     this.config = JSON.parse(JSON.stringify(CONFIG));
 
-    this.state = "INITIALIZING"; // INITIALIZING, MENU, CONNECTING, PLAYING, ERROR
+    this.state = "INITIALIZING"; // INITIALIZING, MENU, CONNECTING, PLAYING, DEAD, ERROR
   }
 
   async initialize() {
@@ -37,6 +39,7 @@ export class Game {
     this.renderer = new Renderer(this);
     this.input = new InputManager(this);
     this.socket = new Socket(this);
+    this.roomController = new RoomController(this);
 
     // Set initial state
     this.setState("MENU");
@@ -74,6 +77,24 @@ export class Game {
     if (this.renderer) {
       this.renderer.setupBackground();
     }
+  }
+
+  onPlayerDeath() {
+    if (this.state === "PLAYING") {
+      this.setState("DEAD");
+    }
+  }
+
+  async respawn() {
+    const name = this.socket.playerName;
+    const room = this.socket.roomID;
+    const customURL = this.socket.customURL;
+
+    if (this.socket.ws) {
+      this.socket.ws.close();
+    }
+
+    await this.connect(name, room, customURL);
   }
 
   setState(newState) {
