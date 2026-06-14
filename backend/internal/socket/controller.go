@@ -101,7 +101,15 @@ func (c *RoomController) HandleWebSocket(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if room.Hub.isNameTaken(playerName) {
+	if len(playerName) > 24 {
+		slog.Warn("connection rejected: name too long", "remote_addr", r.RemoteAddr)
+		errMsg, _ := json.Marshal(map[string]string{"type": "error", "message": "Name too long (max 24 chars)"})
+		conn.WriteMessage(websocket.TextMessage, errMsg)
+		conn.Close()
+		return
+	}
+
+	if room.Hub.IsNameTaken(playerName) {
 		slog.Warn("connection rejected: name taken", "name", playerName)
 		errMsg, _ := json.Marshal(map[string]string{"type": "error", "message": "Name already in use"})
 		conn.WriteMessage(websocket.TextMessage, errMsg)

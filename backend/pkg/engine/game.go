@@ -2,7 +2,6 @@ package engine
 
 import (
 	"math/rand"
-	"sync"
 	"time"
 )
 
@@ -91,12 +90,11 @@ type PerformanceMetrics struct {
 	EntityCount  int           `json:"entity_count"`
 }
 
-// Game represents a single game
+// Game represents a single game. Not thread-safe — must be accessed from one goroutine only.
 type Game struct {
 	Config      GameConfig
 	Arena       *Arena
 	Entities    []Entity
-	mu          sync.Mutex
 	IsActive    bool
 	CurrentTick int
 	Metrics     PerformanceMetrics
@@ -115,9 +113,6 @@ func NewGame(config GameConfig) *Game {
 // Tick executes exactly one frame of game logic
 func (g *Game) Tick() {
 	start := time.Now()
-
-	g.mu.Lock()
-	defer g.mu.Unlock()
 
 	g.CurrentTick++
 
@@ -163,9 +158,6 @@ func (g *Game) Tick() {
 }
 
 func (g *Game) GetVisibleEntities(pos Vector2, viewRange float64) []Entity {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
 	visible := make([]Entity, 0)
 	rangeSq := viewRange * viewRange
 
@@ -228,8 +220,6 @@ func (g *Game) processDeath(victim Entity) {
 
 // Reset clears the game state
 func (g *Game) Reset() {
-	g.mu.Lock()
-	defer g.mu.Unlock()
 	g.Entities = make([]Entity, 0)
 	g.CurrentTick = 0
 }
