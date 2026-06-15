@@ -9,8 +9,14 @@ import (
 )
 
 func corsMiddleware(next http.Handler) http.Handler {
+	// ALLOWED_ORIGINS is a comma-separated list, e.g. "https://example.com,https://www.example.com".
+	// Falls back to "*" when unset (local dev).
+	allowed := os.Getenv("ALLOWED_ORIGINS")
+	if allowed == "" {
+		allowed = "*"
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Origin", allowed)
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
