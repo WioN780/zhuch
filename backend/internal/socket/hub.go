@@ -11,9 +11,10 @@ type InputEvent struct {
 // Hub holds the communication channels into the room goroutine.
 // It does NOT touch game state directly — that belongs exclusively to the room goroutine.
 type Hub struct {
-	Register   chan *Client
-	Unregister chan *Client
-	InputCh    chan InputEvent
+	Register     chan *Client
+	Unregister   chan *Client
+	InputCh      chan InputEvent
+	GraceExpired chan string // player name whose grace period expired
 
 	// namesMu guards names, which is read from HTTP handler goroutines (IsNameTaken).
 	namesMu sync.RWMutex
@@ -22,10 +23,11 @@ type Hub struct {
 
 func NewHub() *Hub {
 	return &Hub{
-		Register:   make(chan *Client, 8),
-		Unregister: make(chan *Client, 8),
-		InputCh:    make(chan InputEvent, 256),
-		names:      make(map[string]bool),
+		Register:     make(chan *Client, 8),
+		Unregister:   make(chan *Client, 8),
+		InputCh:      make(chan InputEvent, 256),
+		GraceExpired: make(chan string, 32),
+		names:        make(map[string]bool),
 	}
 }
 
@@ -33,6 +35,14 @@ func (h *Hub) IsNameTaken(name string) bool {
 	h.namesMu.RLock()
 	defer h.namesMu.RUnlock()
 	return h.names[name]
+}
+
+// PlayerCount returns the number of actively connected players (names claimed).
+// Safe to call from HTTP handler goroutines.
+func (h *Hub) PlayerCount() int {
+	h.namesMu.RLock()
+	defer h.namesMu.RUnlock()
+	return len(h.names)
 }
 
 func (h *Hub) claimName(name string) {

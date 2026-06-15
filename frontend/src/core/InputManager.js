@@ -10,7 +10,15 @@ export class InputManager {
     this.lastSendTimestamp = 0;
     this.sendInterval = 30; // ~33Hz (Faster than server 20Hz to ensure fresh data)
 
-    window.addEventListener("keydown", (e) => this.keys.add(e.code));
+    window.addEventListener("keydown", (e) => {
+      // ESC resigns: leave the room and return to the menu.
+      if (e.code === "Escape") {
+        this.keys.clear();
+        this.game.leaveRoom();
+        return;
+      }
+      this.keys.add(e.code);
+    });
     window.addEventListener("keyup", (e) => this.keys.delete(e.code));
     window.addEventListener("mousemove", (e) => {
       this.mousePos.x = e.clientX;

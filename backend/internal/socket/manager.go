@@ -27,10 +27,18 @@ func NewRoom(id string, config engine.GameConfig) *Room {
 	}
 }
 
+const gracePeriod = 30 * time.Second
+
+type graceEntry struct {
+	tankID string
+	timer  *time.Timer
+}
+
 // Start is the room's single goroutine. It is the ONLY goroutine that reads
 // or writes game state. All external goroutines communicate via Hub channels.
 func (r *Room) Start() {
 	clients := make(map[*Client]bool)
+	grace := make(map[string]*graceEntry)
 
 	ticker := time.NewTicker(time.Second / time.Duration(r.Game.Config.TicksPerSecond))
 	defer ticker.Stop()
@@ -42,15 +50,21 @@ func (r *Room) Start() {
 		case <-ticker.C:
 			r.drainInputs()
 			r.Game.Tick()
-			r.broadcastState(clients)
+			r.broadcastState(clients, grace)
 
 		case client := <-r.Hub.Register:
-			r.registerClient(clients, client)
+			r.registerClient(clients, grace, client)
 
 		case client := <-r.Hub.Unregister:
-			r.unregisterClient(clients, client)
+			r.unregisterClient(clients, grace, client)
+
+		case name := <-r.Hub.GraceExpired:
+			r.expireGrace(grace, name)
 
 		case <-r.StopCh:
+			for _, e := range grace {
+				e.timer.Stop()
+			}
 			slog.Info("room stopping", "id", r.ID)
 			return
 		}
@@ -85,10 +99,36 @@ func (r *Room) drainInputs() {
 	}
 }
 
-func (r *Room) registerClient(clients map[*Client]bool, client *Client) {
-	tank := engine.NewTank(client.ClientName, engine.Vector2{X: 100, Y: 100}, &r.Game.Config)
-	client.TankID = tank.GetID()
-	r.Game.Entities = append(r.Game.Entities, tank)
+func (r *Room) registerClient(clients map[*Client]bool, grace map[string]*graceEntry, client *Client) {
+	if entry, ok := grace[client.ClientName]; ok {
+		// Reconnecting player — cancel the grace timer and reuse the tank if still alive.
+		entry.timer.Stop()
+		delete(grace, client.ClientName)
+
+		tankAlive := false
+		for _, e := range r.Game.Entities {
+			if e.GetID() == entry.tankID {
+				tankAlive = true
+				break
+			}
+		}
+
+		if tankAlive {
+			client.TankID = entry.tankID
+			slog.Info("client reconnected", "name", client.ClientName, "tank_id", client.TankID)
+		} else {
+			tank := engine.NewTank(client.ClientName, engine.Vector2{X: 100, Y: 100}, &r.Game.Config)
+			client.TankID = tank.GetID()
+			r.Game.Entities = append(r.Game.Entities, tank)
+			slog.Info("client reconnected, tank gone, new spawn", "name", client.ClientName, "tank_id", client.TankID)
+		}
+	} else {
+		tank := engine.NewTank(client.ClientName, engine.Vector2{X: 100, Y: 100}, &r.Game.Config)
+		client.TankID = tank.GetID()
+		r.Game.Entities = append(r.Game.Entities, tank)
+		slog.Info("client registered", "name", client.ClientName, "tank_id", client.TankID, "total_clients", len(clients))
+	}
+
 	clients[client] = true
 	r.Hub.claimName(client.ClientName)
 
@@ -98,10 +138,9 @@ func (r *Room) registerClient(clients map[*Client]bool, client *Client) {
 		"config":  r.Game.Config,
 	})
 	safeSend(client.Send, initMsg)
-	slog.Info("client registered", "name", client.ClientName, "tank_id", client.TankID, "total_clients", len(clients))
 }
 
-func (r *Room) unregisterClient(clients map[*Client]bool, client *Client) {
+func (r *Room) unregisterClient(clients map[*Client]bool, grace map[string]*graceEntry, client *Client) {
 	if _, ok := clients[client]; !ok {
 		return
 	}
@@ -109,9 +148,35 @@ func (r *Room) unregisterClient(clients map[*Client]bool, client *Client) {
 	r.Hub.releaseName(client.ClientName)
 	client.closeOnce()
 
+	// Zero input so the tank coasts to a stop during the grace window.
+	for _, e := range r.Game.Entities {
+		if e.GetID() == client.TankID {
+			if tank, ok := e.(*engine.Tank); ok {
+				tank.InputVector = engine.Vector2{}
+			}
+			break
+		}
+	}
+
+	name := client.ClientName
+	tankID := client.TankID
+	timer := time.AfterFunc(gracePeriod, func() {
+		r.Hub.GraceExpired <- name
+	})
+	grace[name] = &graceEntry{tankID: tankID, timer: timer}
+	slog.Info("client grace period started", "name", name, "tank_id", tankID)
+}
+
+func (r *Room) expireGrace(grace map[string]*graceEntry, name string) {
+	entry, ok := grace[name]
+	if !ok {
+		return
+	}
+	delete(grace, name)
+
 	newEntities := r.Game.Entities[:0]
 	for _, e := range r.Game.Entities {
-		if e.GetID() != client.TankID {
+		if e.GetID() != entry.tankID {
 			newEntities = append(newEntities, e)
 		}
 	}
@@ -119,10 +184,10 @@ func (r *Room) unregisterClient(clients map[*Client]bool, client *Client) {
 		r.Game.Entities[i] = nil
 	}
 	r.Game.Entities = newEntities
-	slog.Info("client unregistered", "name", client.ClientName, "tank_id", client.TankID, "total_clients", len(clients))
+	slog.Info("client grace expired, tank removed", "name", name, "tank_id", entry.tankID)
 }
 
-func (r *Room) broadcastState(clients map[*Client]bool) {
+func (r *Room) broadcastState(clients map[*Client]bool, grace map[string]*graceEntry) {
 	tankMap := make(map[string]*engine.Tank)
 	for _, e := range r.Game.Entities {
 		if t, ok := e.(*engine.Tank); ok {
@@ -157,7 +222,7 @@ func (r *Room) broadcastState(clients map[*Client]bool) {
 
 		if !safeSend(client.Send, state) {
 			slog.Warn("client send buffer full, dropping", "name", client.ClientName)
-			r.unregisterClient(clients, client)
+			r.unregisterClient(clients, grace, client)
 		}
 	}
 }
