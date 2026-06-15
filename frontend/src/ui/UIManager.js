@@ -12,7 +12,10 @@ export class UIManager {
         this.showMenu();
         break;
       case "CONNECTING":
-        this.showConnecting();
+        this.showConnecting("Connecting to server...");
+        break;
+      case "RECONNECTING":
+        this.showConnecting("Reconnecting...");
         break;
       case "PLAYING":
         this.showHUD();
@@ -254,6 +257,8 @@ export class UIManager {
 
     const startBtn = document.getElementById("start-btn");
     const nameInput = document.getElementById("player-name");
+    const savedName = localStorage.getItem("zhuch_name");
+    if (savedName) nameInput.value = savedName;
     const roomSelect = document.getElementById("room-id");
     const customUrlGroup = document.getElementById("custom-url-group");
     const customUrlInput = document.getElementById("custom-url");
@@ -284,6 +289,7 @@ export class UIManager {
         this.showError("Please enter a name.");
         return;
       }
+      localStorage.setItem("zhuch_name", name);
 
       const selectedRoom = roomSelect.value;
       let roomID = "default";
@@ -421,9 +427,8 @@ export class UIManager {
         );
         if (success) {
           createModal.style.display = "none";
-          // Update room list immediately
-          updateRoomList();
-          roomSelect.value = roomID;
+          await updateRoomList();
+          document.getElementById("room-id").value = roomID;
           this.showError("Room created successfully!");
         }
       } catch (err) {
@@ -461,24 +466,22 @@ export class UIManager {
         } else {
           rooms.forEach((room) => {
             // Dropdown populating
-            if (room.ID !== "default") {
+            if (room.id !== "default") {
               const option = document.createElement("option");
-              option.value = room.ID;
-              option.text = room.ID;
+              option.value = room.id;
+              option.text = room.id;
               roomSelect.add(option);
             }
 
             // List panel populating
             const item = document.createElement("div");
             item.className = "room-item glass";
-            const tps = room.Game?.Config?.ticks_per_second || "??";
-            const players = room.Hub?.Clients
-              ? Object.keys(room.Hub.Clients).length
-              : 0;
+            const tps = room.tps || "??";
+            const players = room.players || 0;
 
             item.innerHTML = `
                 <div class="room-info">
-                    <div class="room-name">${room.ID}</div>
+                    <div class="room-name">${room.id}</div>
                     <div class="room-details">${tps} TPS • ${players} players</div>
                 </div>
                 <button class="join-room-small-btn button">Join</button>
@@ -491,7 +494,7 @@ export class UIManager {
                 nameInput.focus();
                 return;
               }
-              this.game.roomController.joinGame(name, room.ID, customURL);
+              this.game.roomController.joinGame(name, room.id, customURL);
             };
 
             roomsListContainer.appendChild(item);
@@ -512,13 +515,13 @@ export class UIManager {
     setInterval(updateRoomList, 10000);
   }
 
-  showConnecting() {
+  showConnecting(message = "Connecting to server...") {
     const screen = document.createElement("div");
     screen.className = "screen connecting-screen";
     screen.innerHTML = `
             <div class="loader-content">
                 <div class="spinner"></div>
-                <p>Connecting to server...</p>
+                <p>${message}</p>
             </div>
         `;
     this.container.appendChild(screen);
@@ -544,7 +547,8 @@ export class UIManager {
     };
 
     document.getElementById("menu-btn").onclick = () => {
-      this.game.setState("MENU");
+      // Explicitly leaving the game — don't auto-resume on next load.
+      this.game.leaveRoom();
     };
   }
 

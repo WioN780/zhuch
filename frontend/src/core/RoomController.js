@@ -7,11 +7,19 @@ export class RoomController {
      * Get the base URL based on the user's selection
      */
     getBaseURL(customURL = null) {
-        let url = customURL || "zhuch-production.up.railway.app";
-        if (!url.startsWith("http")) {
-            url = url.includes("localhost") ? `http://${url}` : `https://${url}`;
+        if (customURL) {
+            let url = customURL;
+            if (!url.startsWith("http")) {
+                url = url.includes("localhost") ? `http://${url}` : `https://${url}`;
+            }
+            return url;
         }
-        return url;
+        return (
+            import.meta.env.VITE_BACKEND_URL ||
+            (import.meta.env.DEV
+                ? "http://localhost:8080"
+                : "https://zhuch-production.up.railway.app")
+        );
     }
 
     /**
