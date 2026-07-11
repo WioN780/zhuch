@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+
+	internalbots "zhuch/internal/bots"
 	"zhuch/pkg/engine"
 
 	"github.com/gorilla/websocket"
@@ -34,8 +36,11 @@ func (c *RoomController) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		ID     string            `json:"id"`
-		Config engine.GameConfig `json:"config"`
+		ID       string            `json:"id"`
+		Config   engine.GameConfig `json:"config"`
+		Mode     string            `json:"mode"`
+		BotModel string            `json:"bot_model"`
+		BotCount int               `json:"bot_count"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -48,18 +53,31 @@ func (c *RoomController) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	mode := req.Mode
+	if mode == "" {
+		mode = "ffa"
+	}
+	if !internalbots.ValidMode(mode) {
+		http.Error(w, "Invalid mode: must be one of ffa, zombies, boss, practice", http.StatusBadRequest)
+		return
+	}
+	botModel := req.BotModel
+	if botModel == "" {
+		botModel = "champion"
+	}
+
 	config := req.Config
 	if config.TicksPerSecond == 0 {
 		config = engine.DefaultConfig()
 	}
 
-	room := c.Manager.CreateRoom(req.ID, config)
+	room := c.Manager.CreateRoom(req.ID, config, mode, botModel, req.BotCount)
 	if room == nil {
 		http.Error(w, "Room already exists", http.StatusConflict)
 		return
 	}
 
-	slog.Info("room created", "id", req.ID)
+	slog.Info("room created", "id", req.ID, "mode", mode, "bot_model", botModel)
 	w.WriteHeader(http.StatusCreated)
 }
 

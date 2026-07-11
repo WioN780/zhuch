@@ -122,6 +122,14 @@ func (h *Hub) BroadcastGameState() {
 	}
 }
 
+// ClientCount is a thread-safe count of connected clients (used for the
+// zhuch_players metric).
+func (h *Hub) ClientCount() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.Clients)
+}
+
 func (h *Hub) isNameTaken(name string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()

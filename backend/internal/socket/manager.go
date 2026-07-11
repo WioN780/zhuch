@@ -6,6 +6,9 @@ import (
 	"slices"
 	"sync"
 	"time"
+
+	internalbots "zhuch/internal/bots"
+	"zhuch/internal/metrics"
 	"zhuch/pkg/engine"
 )
 
@@ -15,16 +18,20 @@ type Room struct {
 	ID     string
 	Game   *engine.Game
 	Hub    *Hub
+	Bots   *internalbots.BotSet
 	StopCh chan struct{}
 }
 
-func NewRoom(id string, config engine.GameConfig) *Room {
+// NewRoom builds a room. mode/botModel/botCount configure its BotSet
+// ("ffa"/"" = no bots); see internal/bots.NewBotSet.
+func NewRoom(id string, config engine.GameConfig, mode, botModel string, botCount int) *Room {
 	game := engine.NewGame(config)
 	hub := NewHub(game)
 	return &Room{
 		ID:     id,
 		Game:   game,
 		Hub:    hub,
+		Bots:   internalbots.NewBotSet(mode, botCount, botModel),
 		StopCh: make(chan struct{}),
 	}
 }
@@ -35,13 +42,23 @@ func (r *Room) Start() {
 	ticker := time.NewTicker(time.Second / time.Duration(r.Game.Config.TicksPerSecond))
 	defer ticker.Stop()
 
-	slog.Info("room started", "id", r.ID, "tps", r.Game.Config.TicksPerSecond)
+	slog.Info("room started", "id", r.ID, "tps", r.Game.Config.TicksPerSecond, "mode", r.Bots.Mode)
 
 	for {
 		select {
 		case <-ticker.C:
+			// Bots decide and act BEFORE Tick, synchronously on this same
+			// goroutine — no locking needed. Same assumption as
+			// pkg/bots/obs.go's BuildObservation: never call Bots.Act
+			// concurrently with Game.Tick.
+			r.Bots.Act(r.Game, r.Game.CurrentTick)
 			r.Game.Tick()
 			r.Hub.BroadcastGameState()
+
+			metrics.TickDuration.WithLabelValues(r.ID).Observe(r.Game.Metrics.TickDuration.Seconds())
+			metrics.Entities.WithLabelValues(r.ID).Set(float64(r.Game.Metrics.EntityCount))
+			metrics.Players.WithLabelValues(r.ID).Set(float64(r.Hub.ClientCount()))
+			metrics.Bots.WithLabelValues(r.ID).Set(float64(r.Bots.BotCount()))
 		case <-r.StopCh:
 			slog.Info("room stopping", "id", r.ID)
 			return
@@ -60,7 +77,9 @@ func NewManager() *Manager {
 	}
 }
 
-func (m *Manager) CreateRoom(id string, config engine.GameConfig) *Room {
+// CreateRoom builds and starts a new room. mode/botModel/botCount configure
+// its bots ("ffa"/"" botModel/count are ignored -> no bots).
+func (m *Manager) CreateRoom(id string, config engine.GameConfig, mode, botModel string, botCount int) *Room {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -68,8 +87,9 @@ func (m *Manager) CreateRoom(id string, config engine.GameConfig) *Room {
 		return nil // Room already exists
 	}
 
-	room := NewRoom(id, config)
+	room := NewRoom(id, config, mode, botModel, botCount)
 	m.Rooms[id] = room
+	metrics.Rooms.Set(float64(len(m.Rooms)))
 	go room.Start()
 
 	return room
@@ -92,5 +112,6 @@ func (m *Manager) RemoveRoom(id string) {
 	if room, exists := m.Rooms[id]; exists {
 		close(room.StopCh)
 		delete(m.Rooms, id)
+		metrics.Rooms.Set(float64(len(m.Rooms)))
 	}
 }

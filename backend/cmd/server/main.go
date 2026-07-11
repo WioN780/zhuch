@@ -4,6 +4,8 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+
+	"zhuch/internal/metrics"
 	"zhuch/internal/socket"
 	"zhuch/pkg/engine"
 )
@@ -15,8 +17,10 @@ func main() {
 
 	manager := socket.NewManager()
 
-	// Create a default room at startup
-	manager.CreateRoom("default", engine.DefaultConfig())
+	// Default rooms at startup: a plain FFA room, and a practice room so the
+	// demo always has bots to play against without needing /create first.
+	manager.CreateRoom("default", engine.DefaultConfig(), "ffa", "champion", 0)
+	manager.CreateRoom("practice", engine.DefaultConfig(), "practice", "champion", 0)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -28,6 +32,7 @@ func main() {
 	http.HandleFunc("/rooms", ctrl.HandleListRooms)
 	http.HandleFunc("/create", ctrl.HandleCreate)
 	http.HandleFunc("/ws", ctrl.HandleWebSocket)
+	http.Handle("/metrics", metrics.Handler())
 
 	// for cloud
 	addr := "0.0.0.0:" + port

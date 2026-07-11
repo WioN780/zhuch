@@ -31,13 +31,18 @@ export class RoomController {
 
     /**
      * API: Create a new room
+     * mode: "ffa" | "zombies" | "boss" | "practice" (optional, server defaults to "ffa")
      */
-    async createRoom(roomID, config, customURL = null) {
+    async createRoom(roomID, config, customURL = null, mode = null, botModel = null, botCount = null) {
         const baseURL = this.getBaseURL(customURL);
+        const body = { id: roomID, config };
+        if (mode) body.mode = mode;
+        if (botModel) body.bot_model = botModel;
+        if (botCount) body.bot_count = botCount;
         const response = await fetch(`${baseURL}/create`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: roomID, config })
+            body: JSON.stringify(body)
         });
 
         if (!response.ok) {

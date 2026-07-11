@@ -85,6 +85,7 @@ type Tank struct {
 	FireCooldown      int
 	LastFireTick      int
 	ViewRange         float64
+	IsBot             bool `json:"is_bot"`
 }
 
 var _ Entity = (*Tank)(nil)

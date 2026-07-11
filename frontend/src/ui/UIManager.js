@@ -51,6 +51,14 @@ export class UIManager {
                             <option value="custom">Custom Server</option>
                         </select>
                     </div>
+                    <div class="input-group">
+                        <select id="game-mode">
+                            <option value="ffa">Free For All</option>
+                            <option value="zombies">Zombies</option>
+                            <option value="boss">Boss</option>
+                            <option value="practice">Practice (Bots)</option>
+                        </select>
+                    </div>
                     <div class="input-group" id="custom-url-group" style="display: none;">
                         <input type="text" id="custom-url" placeholder="ws://localhost:8080" value="">
                     </div>
@@ -255,6 +263,7 @@ export class UIManager {
     const startBtn = document.getElementById("start-btn");
     const nameInput = document.getElementById("player-name");
     const roomSelect = document.getElementById("room-id");
+    const modeSelect = document.getElementById("game-mode");
     const customUrlGroup = document.getElementById("custom-url-group");
     const customUrlInput = document.getElementById("custom-url");
 
@@ -278,7 +287,7 @@ export class UIManager {
       updateRoomList();
     };
 
-    startBtn.onclick = () => {
+    startBtn.onclick = async () => {
       const name = nameInput.value.trim();
       if (!name) {
         this.showError("Please enter a name.");
@@ -286,6 +295,7 @@ export class UIManager {
       }
 
       const selectedRoom = roomSelect.value;
+      const mode = modeSelect.value;
       let roomID = "default";
       let customURL = null;
 
@@ -297,6 +307,26 @@ export class UIManager {
         roomID = "default";
       } else {
         roomID = selectedRoom;
+      }
+
+      // Non-ffa modes get their own room: "practice" matches the server's
+      // built-in practice room, others get a fresh generated room id.
+      if (mode !== "ffa") {
+        roomID =
+          mode === "practice" ? "practice" : `${mode}-${Date.now().toString(36)}`;
+        try {
+          await this.game.roomController.createRoom(
+            roomID,
+            {},
+            customURL,
+            mode,
+          );
+        } catch (err) {
+          if (!err.message.includes("already exists")) {
+            this.showError(`Failed to create ${mode} room: ${err.message}`);
+            return;
+          }
+        }
       }
 
       this.game.roomController.joinGame(name, roomID, customURL);

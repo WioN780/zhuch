@@ -45,20 +45,32 @@ export class Tank extends EntityBase {
     this.targetBarrelAngle = 0;
     this.barrelRecoil = 0;
 
+    this.isBot = false;
+    this.bodyColor = 0x1a1a1a;
+
     this.draw();
+  }
+
+  // Bot tanks are tinted by kind: boss dark red, zombies greenish, other
+  // bots (practice, etc.) orange. Player tanks keep the default color.
+  botColorFor(isBot, name) {
+    if (!isBot) return 0x1a1a1a;
+    if (name === "boss") return 0xaa2222;
+    if (name && name.startsWith("zombie")) return 0x66aa44;
+    return 0xff8800;
   }
 
   draw() {
     this.body
       .clear()
       .circle(0, 0, this.radius)
-      .fill({ color: 0x1a1a1a })
+      .fill({ color: this.bodyColor })
       .stroke({ color: 0xffffff, width: 1.5, alpha: 0.8 });
 
     this.barrel
       .clear()
       .rect(0, -this.radius * 0.4, this.radius * 1.5, this.radius * 0.8)
-      .fill({ color: 0x1a1a1a })
+      .fill({ color: this.bodyColor })
       .stroke({ color: 0xffffff, width: 1.5, alpha: 0.8 });
   }
 
@@ -220,6 +232,14 @@ export class Tank extends EntityBase {
 
     const name = data.name || data.Name;
     if (name && this.nameTag.text !== name) this.nameTag.text = name;
+
+    const isBot = data.is_bot === true || data.IsBot === true;
+    const newColor = this.botColorFor(isBot, name);
+    if (isBot !== this.isBot || newColor !== this.bodyColor) {
+      this.isBot = isBot;
+      this.bodyColor = newColor;
+      this.draw();
+    }
 
     const object = data.object || data.Object;
     if (object && (object.Radius || object.radius)) {

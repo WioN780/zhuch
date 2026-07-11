@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"zhuch/internal/metrics"
 	"zhuch/pkg/bots"
 	"zhuch/pkg/brain"
 	"zhuch/pkg/engine"
@@ -65,6 +66,10 @@ func runEpisode(req EvalRequest) (*EvalResponse, error) {
 		}
 	}
 	g := engine.NewGameSeeded(cfg, req.Seed)
+
+	metrics.ArenaInflightEvals.Inc()
+	defer metrics.ArenaInflightEvals.Dec()
+	episodeStart := time.Now()
 
 	n := len(req.Tanks)
 	tanks := make([]*engine.Tank, n)
@@ -132,7 +137,7 @@ func runEpisode(req EvalRequest) (*EvalResponse, error) {
 			Alive:     deathTick[i] == -1,
 		}
 	}
-	episodeFinished(resp)
+	episodeFinished(resp, time.Since(episodeStart))
 	return resp, nil
 }
 
@@ -144,7 +149,11 @@ var (
 	epWindowStart = time.Now()
 )
 
-func episodeFinished(*EvalResponse) {
+func episodeFinished(resp *EvalResponse, dur time.Duration) {
+	metrics.ArenaEpisodes.Inc()
+	metrics.ArenaEpisodeDuration.Observe(dur.Seconds())
+	metrics.ArenaTicks.Add(float64(resp.Ticks))
+
 	epMu.Lock()
 	epCount++
 	if epCount%100 == 0 {
@@ -245,6 +254,7 @@ func main() {
 	mux.HandleFunc("POST /eval", handleEval)
 	mux.HandleFunc("POST /eval_batch", handleEvalBatch)
 	mux.HandleFunc("POST /forward", handleForward)
+	mux.Handle("GET /metrics", metrics.Handler())
 
 	slog.Info("arena listening", "port", port, "workers", runtime.GOMAXPROCS(0))
 	if err := http.ListenAndServe(":"+port, mux); err != nil {
