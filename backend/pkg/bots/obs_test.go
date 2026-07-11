@@ -23,26 +23,26 @@ func TestBuildObservation(t *testing.T) {
 	BuildObservation(g, tank, buf[:])
 
 	want := map[int]float64{
-		0: 1.0,          // full health
-		1: 3.0 / 15.0,   // vel.X / TankMaxSpeed
-		2: -4.5 / 15.0,  // vel.Y / TankMaxSpeed
+		0: 1.0,         // full health
+		1: 3.0 / 15.0,  // vel.X / TankMaxSpeed
+		2: -4.5 / 15.0, // vel.Y / TankMaxSpeed
 		3: math.Sin(0.5),
 		4: math.Cos(0.5),
-		5: 1.0,          // tick 0, LastFireTick 0 → full cooldown remaining
+		5: 1.0,           // tick 0, LastFireTick 0 → full cooldown remaining
 		6: 150.0 / 800.0, // left wall
-		7: 1.0,          // right wall clipped
-		8: 1.0,          // top wall clipped
-		9: 1.0,          // bottom wall clipped
+		7: 1.0,           // right wall clipped
+		8: 1.0,           // top wall clipped
+		9: 1.0,           // bottom wall clipped
 		// slot 0: the food, rel (100, 0)
 		10: 100.0 / 800.0,
 		11: 0,
-		12: -3.0 / 20.0,  // rel vel (0-3)/muzzle
-		13: 4.5 / 20.0,   // (0-(-4.5))/muzzle
-		14: 0,            // is_tank
-		15: 0,            // is_bullet
-		16: 1,            // is_food
+		12: -3.0 / 20.0,         // rel vel (0-3)/muzzle
+		13: 4.5 / 20.0,          // (0-(-4.5))/muzzle
+		14: 0,                   // is_tank
+		15: 0,                   // is_bullet
+		16: 1,                   // is_food
 		17: 15.0 * 0.707 / 20.0, // square bounding radius / TankRadius
-		18: 1.0,          // food full health
+		18: 1.0,                 // food full health
 	}
 	for i := 0; i < ObsSize; i++ {
 		exp := want[i] // absent keys (slots 1-7) must be zero-padded
