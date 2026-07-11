@@ -1,0 +1,27 @@
+zhuch arena: {{ .Values.arena.replicas }} replicas running.
+
+In-cluster URL:
+  http://{{ include "zhuch.arena.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.arena.port }}
+
+Port-forward for host-side training (see infra/k8s.md):
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "zhuch.arena.fullname" . }} {{ .Values.arena.port }}:{{ .Values.arena.port }}
+
+Then, from training/ on the host:
+  .venv\Scripts\python scripts\train.py --arena-urls http://127.0.0.1:{{ .Values.arena.port }}
+
+Scale the arena fleet:
+  kubectl scale deployment {{ include "zhuch.arena.fullname" . }} --replicas=<N> -n {{ .Release.Namespace }}
+{{- if .Values.trainer.enabled }}
+
+Trainer Job "{{ include "zhuch.fullname" . }}-trainer" is enabled: {{ .Values.trainer.algo }},
+{{ .Values.trainer.generations }} generations, against the in-cluster arena Service.
+Logs: kubectl logs -n {{ .Release.Namespace }} job/{{ include "zhuch.fullname" . }}-trainer -f
+{{- end }}
+{{- if .Values.mlflow.enabled }}
+
+MLflow (in-cluster, ephemeral): http://{{ include "zhuch.mlflow.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.mlflow.port }}
+{{- end }}
+{{- if .Values.server.enabled }}
+
+Game server (smoke test only — Railway serves prod): http://{{ include "zhuch.server.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.server.port }}
+{{- end }}

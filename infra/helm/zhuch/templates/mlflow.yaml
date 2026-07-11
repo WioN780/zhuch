@@ -1,0 +1,56 @@
+{{- if .Values.mlflow.enabled }}
+# ponytail: sqlite + local-disk artifacts, no PVC — throwaway in-cluster
+# tracking, lost on pod restart. Does not duplicate the persistent
+# postgres+minio MLflow in infra/compose/docker-compose.yml; use that (via
+# trainer.mlflowTrackingUri pointed at the host) when runs need to survive.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "zhuch.mlflow.fullname" . }}
+  labels:
+    {{- include "zhuch.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mlflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "zhuch.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: mlflow
+  template:
+    metadata:
+      labels:
+        {{- include "zhuch.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: mlflow
+    spec:
+      containers:
+        - name: mlflow
+          image: "{{ .Values.mlflow.image.repository }}:{{ .Values.mlflow.image.tag }}"
+          args:
+            - server
+            - --backend-store-uri=sqlite:////mlflow/mlflow.db
+            - --default-artifact-root=/mlflow/artifacts
+            - --host=0.0.0.0
+            - --port={{ .Values.mlflow.port }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.mlflow.port }}
+          resources:
+            {{- toYaml .Values.mlflow.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "zhuch.mlflow.fullname" . }}
+  labels:
+    {{- include "zhuch.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mlflow
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "zhuch.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: mlflow
+  ports:
+    - name: http
+      port: {{ .Values.mlflow.port }}
+      targetPort: http
+{{- end }}
