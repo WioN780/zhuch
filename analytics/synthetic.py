@@ -7,7 +7,7 @@ the Go producers are wired up (they gate emission on KAFKA_BROKERS, same as here
 
 CLI:
     python -m analytics.synthetic --episodes 200 --out events.ndjson
-    python -m analytics.synthetic --episodes 200 --brokers localhost:9092
+    python -m analytics.synthetic --episodes 200 --brokers localhost:19092
 """
 from __future__ import annotations
 
@@ -136,7 +136,7 @@ def main(argv=None) -> None:
     ap.add_argument("--episodes", type=int, default=200)
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--out", help="NDJSON output path ('-' for stdout)")
-    ap.add_argument("--brokers", nargs="+", help="Kafka bootstrap servers, e.g. localhost:9092")
+    ap.add_argument("--brokers", nargs="+", help="Kafka bootstrap servers, e.g. localhost:19092")
     ap.add_argument("--topic", default=TOPIC)
     ap.add_argument("--spread-hours", type=float, default=3.0,
                      help="spread episode start times across N hours")

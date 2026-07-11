@@ -52,6 +52,9 @@ func New(source string) *Producer {
 		kgo.SeedBrokers(strings.Split(brokers, ",")...),
 		kgo.DefaultProduceTopic(Topic),
 		kgo.AllowAutoTopicCreation(),
+		// Tiny JSON records on a local broker: compression buys nothing and
+		// the default snappy codec breaks pure-python consumers.
+		kgo.ProducerBatchCompression(kgo.NoCompression()),
 	)
 	if err != nil {
 		slog.Error("telemetry disabled: kafka client failed", "error", err)
@@ -61,8 +64,10 @@ func New(source string) *Producer {
 	return &Producer{client: client, source: source}
 }
 
-// Emit publishes one event asynchronously. Safe to call from the game tick
-// (it never blocks); drops on the floor if the broker is unreachable.
+// Emit publishes one event asynchronously. Safe to call from the game tick:
+// TryProduce never blocks — when the buffer is full (broker slow or
+// unreachable) the event is dropped. Telemetry must never stall the sim;
+// a blocking Produce here collapsed arena throughput ~150x.
 func (p *Producer) Emit(ev Event) {
 	if p == nil || p.client == nil {
 		return
@@ -73,7 +78,7 @@ func (p *Producer) Emit(ev Event) {
 	if err != nil {
 		return
 	}
-	p.client.Produce(context.Background(), &kgo.Record{Value: payload}, nil)
+	p.client.TryProduce(context.Background(), &kgo.Record{Value: payload}, nil)
 }
 
 // Close flushes pending records.

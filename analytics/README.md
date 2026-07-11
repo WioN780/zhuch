@@ -48,8 +48,8 @@ cd infra/compose
 docker compose up -d redpanda
 
 cd ../../analytics
-.venv\Scripts\python -m analytics.synthetic --episodes 200 --brokers localhost:9092
-.venv\Scripts\python -m analytics.sink --brokers localhost:9092 --out out
+.venv\Scripts\python -m analytics.synthetic --episodes 200 --brokers localhost:19092
+.venv\Scripts\python -m analytics.sink --brokers localhost:19092 --out out
 ```
 
 ## Spark jobs

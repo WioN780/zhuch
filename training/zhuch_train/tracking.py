@@ -14,6 +14,13 @@ class Tracker:
         if not uri:
             return
         try:
+            import sys
+            # mlflow prints emoji (🏃) on end_run; on Windows cp1252 consoles
+            # the resulting UnicodeEncodeError aborts set_terminated and every
+            # run is left in RUNNING state forever.
+            for stream in (sys.stdout, sys.stderr):
+                if hasattr(stream, "reconfigure"):
+                    stream.reconfigure(errors="replace")
             import mlflow
             mlflow.set_tracking_uri(uri)
             mlflow.set_experiment("zhuch")

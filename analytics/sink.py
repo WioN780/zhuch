@@ -9,7 +9,7 @@ shutdown on SIGINT/SIGTERM flushes whatever is buffered before exiting.
 
 CLI:
     python -m analytics.sink --from-ndjson events.ndjson --out out
-    python -m analytics.sink --brokers localhost:9092 --out out
+    python -m analytics.sink --brokers localhost:19092 --out out
 """
 from __future__ import annotations
 
