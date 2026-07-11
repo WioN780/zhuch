@@ -18,7 +18,12 @@ from pyspark.sql import functions as F
 
 def compute(spark: SparkSession, parquet_root: str) -> list[dict]:
     df = spark.read.parquet(parquet_root)
-    df = df.withColumn("mode", F.get_json_object(F.col("data"), "$.mode"))
+    # Arena eval events carry no mode; a null here breaks schema inference
+    # on the summary write, so name the bucket explicitly.
+    df = df.withColumn(
+        "mode",
+        F.coalesce(F.get_json_object(F.col("data"), "$.mode"), F.lit("arena-eval")),
+    )
 
     kill_rows = (
         df.filter(F.col("type") == "kill")

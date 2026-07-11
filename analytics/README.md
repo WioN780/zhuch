@@ -81,3 +81,11 @@ join against other large tables (match history, player profiles). Until then, th
 deliberately built with the distributed-compute path proven out ahead of needing it;
 swap `SparkSession.builder...getOrCreate()` for `duckdb.connect()` in `spark_jobs/*.py`
 if JVM startup ever becomes the bottleneck instead of the analysis itself.
+
+## Spark on this machine
+
+The Windows host blocks JVM loopback socket pairs (security software), so PySpark cannot start locally — run Spark jobs from WSL instead:
+
+```bash
+wsl -d Ubuntu -- bash -c "cd /mnt/d/Random\ Projects/zhuch && JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 ~/.zhuch-spark/bin/python -m analytics.spark_jobs.balance --in analytics/out --out analytics/out_summary/balance.parquet"
+```
