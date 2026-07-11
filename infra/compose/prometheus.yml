@@ -1,0 +1,20 @@
+# Scrapes the Go processes running on the HOST via host.docker.internal
+# (the prometheus service sets extra_hosts host-gateway so this also works on
+# plain Linux / WSL2 — on Docker Desktop the name exists anyway).
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Go game server — zhuch_tick_duration_seconds, zhuch_entities/players/bots (room label), zhuch_rooms
+  - job_name: zhuch-game
+    static_configs:
+      - targets: ["host.docker.internal:8080"]
+
+  # Headless arena — arena_episodes_total, arena_episode_duration_seconds, arena_ticks_total, arena_inflight_evals
+  - job_name: zhuch-arena
+    static_configs:
+      - targets: ["host.docker.internal:8081"]
