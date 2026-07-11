@@ -1,0 +1,14 @@
+# Arena eval server (headless). Kept separate from Dockerfile (game server)
+# so the existing image stays untouched.
+FROM golang:1.26-alpine AS builder
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -o arena ./cmd/arena
+
+FROM alpine:latest
+WORKDIR /app
+COPY --from=builder /app/arena .
+EXPOSE 8081
+CMD ["./arena"]

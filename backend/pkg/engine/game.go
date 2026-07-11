@@ -2,6 +2,7 @@ package engine
 
 import (
 	"math/rand"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -96,20 +97,53 @@ type Game struct {
 	Config      GameConfig
 	Arena       *Arena
 	Entities    []Entity
+	Rng         *rand.Rand
 	mu          sync.Mutex
 	IsActive    bool
 	CurrentTick int
 	Metrics     PerformanceMetrics
+	nextID      int
 }
 
 // NewGame acts as the factory for the room
 func NewGame(config GameConfig) *Game {
+	return NewGameSeeded(config, time.Now().UnixNano())
+}
+
+// NewGameSeeded creates a game whose randomness (food spawns, etc.) is
+// fully determined by seed, so seeded games replay identically.
+func NewGameSeeded(config GameConfig, seed int64) *Game {
 	return &Game{
 		Config:   config,
 		Arena:    NewArena(config.MapWidth, config.MapHeight),
 		Entities: make([]Entity, 0),
+		Rng:      rand.New(rand.NewSource(seed)),
 		IsActive: false,
 	}
+}
+
+// newID returns a deterministic per-game entity ID. Caller must hold g.mu.
+// Collision pair-dedup and kill attribution compare IDs, so seeded replays
+// need IDs that don't depend on uuid randomness.
+func (g *Game) newID(prefix string) string {
+	g.nextID++
+	return prefix + "-" + strconv.Itoa(g.nextID)
+}
+
+// SpawnTank assigns a deterministic ID and appends the tank under g.mu.
+func (g *Game) SpawnTank(t *Tank) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	t.ID = g.newID("tank")
+	g.Entities = append(g.Entities, t)
+}
+
+// SpawnBullet assigns a deterministic ID and appends the bullet under g.mu.
+func (g *Game) SpawnBullet(b *Bullet) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	b.ID = g.newID("bullet")
+	g.Entities = append(g.Entities, b)
 }
 
 // Tick executes exactly one frame of game logic
@@ -178,10 +212,10 @@ func (g *Game) GetVisibleEntities(pos Vector2, viewRange float64) []Entity {
 }
 
 func (g *Game) spawnRandomFood() {
-	x := rand.Float64() * g.Config.MapWidth
-	y := rand.Float64() * g.Config.MapHeight
+	x := g.Rng.Float64() * g.Config.MapWidth
+	y := g.Rng.Float64() * g.Config.MapHeight
 
-	roll := rand.Float64()
+	roll := g.Rng.Float64()
 	var fType FoodType
 	if roll < 0.6 {
 		fType = FoodSquare
@@ -192,6 +226,7 @@ func (g *Game) spawnRandomFood() {
 	}
 
 	food := NewFood(g.Config.FoodConfigs[fType], fType, Vector2{X: x, Y: y})
+	food.ID = g.newID("food") // spawnRandomFood runs under g.mu (inside Tick)
 	g.Entities = append(g.Entities, food)
 }
 

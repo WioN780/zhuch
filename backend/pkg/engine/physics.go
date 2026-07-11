@@ -1,9 +1,5 @@
 package engine
 
-import (
-	"sync"
-)
-
 // Collidable defines the interface for anything that can participate in the physics engine
 type Collidable interface {
 	GetID() string
@@ -110,38 +106,33 @@ func (g *Game) CheckAllCollisions(arena *Arena) {
 		grid[coord] = append(grid[coord], c)
 	}
 
-	var wg sync.WaitGroup
 	offsets := []GridCoord{
 		{0, 0}, {-1, 0}, {1, 0}, {0, -1}, {0, 1},
 		{-1, -1}, {-1, 1}, {1, -1}, {1, 1},
 	}
 
-	for i := 0; i < len(allCollidables); i++ {
-		c1 := allCollidables[i]
-		if c1.IsStatic() {
+	// Sequential on purpose: pairs (A,B) and (B,C) both mutate B, so
+	// per-entity goroutines were a data race. Determinism needs order too.
+	for _, obj1 := range allCollidables {
+		if obj1.IsStatic() {
 			continue
 		}
 
-		wg.Add(1)
-		go func(obj1 Collidable) {
-			defer wg.Done()
-			baseCoord := getCoord(obj1.GetPosition(), g.Config.CellSize)
+		baseCoord := getCoord(obj1.GetPosition(), g.Config.CellSize)
 
-			for _, offset := range offsets {
-				checkCoord := GridCoord{X: baseCoord.X + offset.X, Y: baseCoord.Y + offset.Y}
+		for _, offset := range offsets {
+			checkCoord := GridCoord{X: baseCoord.X + offset.X, Y: baseCoord.Y + offset.Y}
 
-				if cellObjects, exists := grid[checkCoord]; exists {
-					for _, obj2 := range cellObjects {
-						if obj1.GetID() < obj2.GetID() {
-							if hit, normal, overlap := obj1.GetGeom().Intersects(obj2.GetGeom()); hit {
-								obj1.OnCollision(obj2, normal, overlap)
-								obj2.OnCollision(obj1, normal.Scale(-1), overlap)
-							}
+			if cellObjects, exists := grid[checkCoord]; exists {
+				for _, obj2 := range cellObjects {
+					if obj1.GetID() < obj2.GetID() {
+						if hit, normal, overlap := obj1.GetGeom().Intersects(obj2.GetGeom()); hit {
+							obj1.OnCollision(obj2, normal, overlap)
+							obj2.OnCollision(obj1, normal.Scale(-1), overlap)
 						}
 					}
 				}
 			}
-		}(c1)
+		}
 	}
-	wg.Wait()
 }

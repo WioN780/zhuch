@@ -11,6 +11,7 @@ type Entity interface {
 	// Game Logic
 	IsAlive() bool
 	GetHealth() float64
+	GetMaxHealth() float64
 	SetHealth(h float64)
 	GetBodyDamage() float64
 
@@ -59,6 +60,7 @@ func (b *BaseEntity) CollisionAction(other Entity) {
 
 func (b *BaseEntity) IsAlive() bool               { return b.Health > 0 }
 func (b *BaseEntity) GetHealth() float64          { return b.Health }
+func (b *BaseEntity) GetMaxHealth() float64       { return b.MaxHealth }
 func (b *BaseEntity) SetHealth(h float64)         { b.Health = h }
 func (b *BaseEntity) GetBodyDamage() float64      { return b.BodyDamage }
 func (b *BaseEntity) ResetActionTimer()           { b.TicksSinceAction = 0 }
