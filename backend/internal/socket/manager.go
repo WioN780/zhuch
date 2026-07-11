@@ -9,8 +9,12 @@ import (
 
 	internalbots "zhuch/internal/bots"
 	"zhuch/internal/metrics"
+	"zhuch/internal/telemetry"
 	"zhuch/pkg/engine"
 )
+
+// One producer for the whole server; inert unless KAFKA_BROKERS is set.
+var producer = telemetry.New("live")
 
 // manager is for organising games and hubs into rooms
 
@@ -39,6 +43,13 @@ func NewRoom(id string, config engine.GameConfig, mode, botModel string, botCoun
 func (r *Room) Start() {
 	go r.Hub.Run()
 
+	r.Game.OnEvent = func(eventType, actor, target string, pos engine.Vector2) {
+		producer.Emit(telemetry.Event{
+			Room: r.ID, Type: eventType, Actor: actor, Target: target,
+			Pos: &telemetry.Pos{X: pos.X, Y: pos.Y},
+		})
+	}
+
 	ticker := time.NewTicker(time.Second / time.Duration(r.Game.Config.TicksPerSecond))
 	defer ticker.Stop()
 
@@ -59,6 +70,17 @@ func (r *Room) Start() {
 			metrics.Entities.WithLabelValues(r.ID).Set(float64(r.Game.Metrics.EntityCount))
 			metrics.Players.WithLabelValues(r.ID).Set(float64(r.Hub.ClientCount()))
 			metrics.Bots.WithLabelValues(r.ID).Set(float64(r.Bots.BotCount()))
+
+			// 1Hz position samples per tank (contracts §6).
+			if r.Game.CurrentTick%20 == 0 {
+				for _, t := range r.Game.Tanks() {
+					pos := t.GetPosition()
+					producer.Emit(telemetry.Event{
+						Room: r.ID, Type: "pos_sample", Actor: t.GetID(),
+						Pos: &telemetry.Pos{X: pos.X, Y: pos.Y},
+					})
+				}
+			}
 		case <-r.StopCh:
 			slog.Info("room stopping", "id", r.ID)
 			return

@@ -13,12 +13,20 @@ import (
 	"time"
 
 	"zhuch/internal/metrics"
+	"zhuch/internal/telemetry"
 	"zhuch/pkg/bots"
 	"zhuch/pkg/brain"
 	"zhuch/pkg/engine"
 )
 
 var mlpSizes = []int{82, 64, 64, 5} // contracts §3
+
+// Inert unless KAFKA_BROKERS is set. telemetryOn guards the per-tick
+// pos_sample loop so the hot path stays branch-cheap when disabled.
+var (
+	producer    = telemetry.New("arena")
+	telemetryOn = os.Getenv("KAFKA_BROKERS") != ""
+)
 
 type TankSpec struct {
 	Name       string `json:"name"`
@@ -66,6 +74,15 @@ func runEpisode(req EvalRequest) (*EvalResponse, error) {
 		}
 	}
 	g := engine.NewGameSeeded(cfg, req.Seed)
+
+	episodeID := fmt.Sprintf("ep-%d-%d", req.Seed, time.Now().UnixNano())
+	g.OnEvent = func(eventType, actor, target string, pos engine.Vector2) {
+		producer.Emit(telemetry.Event{
+			Room: "arena", Episode: episodeID, Type: eventType,
+			Actor: actor, Target: target,
+			Pos: &telemetry.Pos{X: pos.X, Y: pos.Y},
+		})
+	}
 
 	metrics.ArenaInflightEvals.Inc()
 	defer metrics.ArenaInflightEvals.Dec()
@@ -125,6 +142,19 @@ func runEpisode(req EvalRequest) (*EvalResponse, error) {
 		if deathTick[0] != -1 {
 			break // candidate died
 		}
+		// 1Hz position samples (contracts §6); no-op without KAFKA_BROKERS.
+		if telemetryOn && tick%20 == 0 {
+			for i, t := range tanks {
+				if deathTick[i] != -1 {
+					continue
+				}
+				pos := t.GetPosition()
+				producer.Emit(telemetry.Event{
+					Room: "arena", Episode: episodeID, Type: "pos_sample",
+					Actor: t.GetID(), Pos: &telemetry.Pos{X: pos.X, Y: pos.Y},
+				})
+			}
+		}
 	}
 
 	resp := &EvalResponse{Ticks: g.CurrentTick, Tanks: make([]TankResult, n)}
@@ -141,8 +171,7 @@ func runEpisode(req EvalRequest) (*EvalResponse, error) {
 	return resp, nil
 }
 
-// episodeFinished is the single episode-completion hook. The telemetry
-// producer (WS-G, contracts §6) attaches here later.
+// episodeFinished is the single episode-completion hook (metrics + telemetry).
 var (
 	epMu          sync.Mutex
 	epCount       int
@@ -153,6 +182,11 @@ func episodeFinished(resp *EvalResponse, dur time.Duration) {
 	metrics.ArenaEpisodes.Inc()
 	metrics.ArenaEpisodeDuration.Observe(dur.Seconds())
 	metrics.ArenaTicks.Add(float64(resp.Ticks))
+
+	producer.Emit(telemetry.Event{
+		Room: "arena", Type: "episode_end", Actor: resp.Tanks[0].Name,
+		Data: map[string]any{"ticks": resp.Ticks, "tanks": resp.Tanks, "duration_ms": dur.Milliseconds()},
+	})
 
 	epMu.Lock()
 	epCount++

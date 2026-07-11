@@ -103,6 +103,11 @@ type Game struct {
 	CurrentTick int
 	Metrics     PerformanceMetrics
 	nextID      int
+
+	// OnEvent, when set, is called for engine events ("kill", "death") while
+	// g.mu is held: handlers must be fast, non-blocking, and must not call
+	// back into Game. Used by the telemetry producers.
+	OnEvent func(eventType, actor, target string, pos Vector2)
 }
 
 // NewGame acts as the factory for the room
@@ -196,6 +201,19 @@ func (g *Game) Tick() {
 	g.Metrics.EntityCount = len(g.Entities)
 }
 
+// Tanks returns a snapshot of the currently alive tanks.
+func (g *Game) Tanks() []*Tank {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	tanks := make([]*Tank, 0, 8)
+	for _, e := range g.Entities {
+		if t, ok := e.(*Tank); ok {
+			tanks = append(tanks, t)
+		}
+	}
+	return tanks
+}
+
 // HasEntity reports whether an entity with the given ID is currently alive.
 func (g *Game) HasEntity(id string) bool {
 	g.mu.Lock()
@@ -244,6 +262,11 @@ func (g *Game) spawnRandomFood() {
 
 func (g *Game) processDeath(victim Entity) {
 	attackerID := victim.GetLastAttackerID()
+
+	if g.OnEvent != nil {
+		g.OnEvent("death", victim.GetID(), attackerID, victim.GetPosition())
+	}
+
 	if attackerID == "" {
 		return
 	}
@@ -261,6 +284,10 @@ func (g *Game) processDeath(victim Entity) {
 
 	if killer == nil {
 		return
+	}
+
+	if g.OnEvent != nil {
+		g.OnEvent("kill", killer.GetID(), victim.GetID(), victim.GetPosition())
 	}
 
 	// Award based on victim type
