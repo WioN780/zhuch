@@ -102,7 +102,35 @@ services:
     depends_on:
       - prometheus
 
+  # Kafka-API compatible; Go producers gate on KAFKA_BROKERS env. Single-node
+  # dev mode: no replication, in-container disk, tiny memory footprint.
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.3.13
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container
+      - --smp=1
+      - --memory=512M
+      - --overprovisioned
+      - --node-id=0
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092
+      - --pandaproxy-addr=0.0.0.0:8082
+      - --advertise-pandaproxy-addr=redpanda:8082
+    ports:
+      - "9092:9092" # Kafka API
+      - "9644:9644" # admin API (health, metrics)
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   pgdata:
   minio-data:
   prom-data:
+  redpanda-data:
