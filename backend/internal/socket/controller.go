@@ -20,12 +20,64 @@ func NewRoomController(m *Manager) *RoomController {
 	return &RoomController{Manager: m}
 }
 
+// RoomSummary is the public shape of a room. The Room struct itself is not
+// serializable (Hub.Clients has pointer keys) and would leak game internals.
+type RoomSummary struct {
+	ID      string `json:"id"`
+	Mode    string `json:"mode"`
+	Players int    `json:"players"`
+	Bots    int    `json:"bots"`
+	TPS     int    `json:"tps"`
+}
+
 // API: GET /rooms
 func (c *RoomController) HandleListRooms(w http.ResponseWriter, r *http.Request) {
 	rooms := c.Manager.ListRooms()
 
+	summaries := make([]RoomSummary, 0, len(rooms))
+	for _, room := range rooms {
+		summaries = append(summaries, RoomSummary{
+			ID:      room.ID,
+			Mode:    string(room.Bots.Mode),
+			Players: room.Hub.ClientCount(),
+			Bots:    room.Bots.BotCount(),
+			TPS:     room.Game.Config.TicksPerSecond,
+		})
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(rooms)
+	json.NewEncoder(w).Encode(summaries)
+}
+
+// protectedRooms are seeded at startup and always available; deleting them
+// would leave the public demo without a guaranteed room.
+var protectedRooms = map[string]bool{"default": true, "practice": true}
+
+// API: POST /delete
+func (c *RoomController) HandleDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID == "" {
+		http.Error(w, "Room ID required", http.StatusBadRequest)
+		return
+	}
+	if protectedRooms[req.ID] {
+		http.Error(w, "Cannot delete a built-in room", http.StatusForbidden)
+		return
+	}
+	if !c.Manager.RemoveRoom(req.ID) {
+		http.Error(w, "Room not found", http.StatusNotFound)
+		return
+	}
+
+	slog.Info("room deleted", "id", req.ID)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // API: POST /create

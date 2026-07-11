@@ -15,6 +15,7 @@ type Hub struct {
 	// Channels for thread-safe client connections
 	Register   chan *Client
 	Unregister chan *Client
+	Quit       chan struct{} // room deletion: kick everyone
 
 	mu sync.Mutex
 }
@@ -25,6 +26,7 @@ func NewHub(g *engine.Game) *Hub {
 		Clients:    make(map[*Client]bool),
 		Register:   make(chan *Client),
 		Unregister: make(chan *Client),
+		Quit:       make(chan struct{}),
 	}
 }
 
@@ -67,6 +69,17 @@ func (h *Hub) Run() {
 				}
 				h.Game.Entities = newEntities
 				slog.Info("client unregistered", "name", client.ClientName, "tank_id", client.TankID, "total_clients", len(h.Clients))
+			}
+			h.mu.Unlock()
+
+		case <-h.Quit:
+			// Room is being deleted: closing the conns makes each ReadPump
+			// error out and unregister itself through the normal path above.
+			// ponytail: the Run goroutine of a deleted room idles forever;
+			// add a drain-and-return if rooms ever churn at scale.
+			h.mu.Lock()
+			for client := range h.Clients {
+				client.Conn.Close()
 			}
 			h.mu.Unlock()
 		}
@@ -134,7 +147,9 @@ func (h *Hub) isNameTaken(name string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for client := range h.Clients {
-		if client.ClientName == name {
+		// A client whose tank is gone is a dead spectator; it must not block
+		// its own player from respawning/rejoining under the same name.
+		if client.ClientName == name && h.Game.HasEntity(client.TankID) {
 			return true
 		}
 	}

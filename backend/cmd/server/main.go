@@ -46,6 +46,7 @@ func main() {
 
 	http.HandleFunc("/rooms", cors(ctrl.HandleListRooms))
 	http.HandleFunc("/create", cors(ctrl.HandleCreate))
+	http.HandleFunc("/delete", cors(ctrl.HandleDelete))
 	http.HandleFunc("/ws", ctrl.HandleWebSocket)
 	http.Handle("/metrics", metrics.Handler())
 

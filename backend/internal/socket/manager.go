@@ -102,16 +102,24 @@ func (m *Manager) GetRoom(id string) *Room {
 }
 
 func (m *Manager) ListRooms() []*Room {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return slices.Collect(maps.Values(m.Rooms))
 }
 
-func (m *Manager) RemoveRoom(id string) {
+// RemoveRoom stops the room's tick loop, kicks every connected client and
+// forgets the room. Reports whether the room existed.
+func (m *Manager) RemoveRoom(id string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if room, exists := m.Rooms[id]; exists {
-		close(room.StopCh)
-		delete(m.Rooms, id)
-		metrics.Rooms.Set(float64(len(m.Rooms)))
+	room, exists := m.Rooms[id]
+	if !exists {
+		return false
 	}
+	close(room.StopCh)
+	close(room.Hub.Quit)
+	delete(m.Rooms, id)
+	metrics.Rooms.Set(float64(len(m.Rooms)))
+	return true
 }

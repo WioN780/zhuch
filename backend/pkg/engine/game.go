@@ -196,6 +196,18 @@ func (g *Game) Tick() {
 	g.Metrics.EntityCount = len(g.Entities)
 }
 
+// HasEntity reports whether an entity with the given ID is currently alive.
+func (g *Game) HasEntity(id string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for _, e := range g.Entities {
+		if e.GetID() == id {
+			return true
+		}
+	}
+	return false
+}
+
 func (g *Game) GetVisibleEntities(pos Vector2, viewRange float64) []Entity {
 	g.mu.Lock()
 	defer g.mu.Unlock()

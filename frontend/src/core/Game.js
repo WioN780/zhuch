@@ -97,6 +97,16 @@ export class Game {
     await this.connect(name, room, customURL);
   }
 
+  // Leaving must close the socket: a lingering connection keeps the dead
+  // spectator client registered server-side (blocking the name) and its
+  // per-tick "dead" packets would instantly kill the next session's UI.
+  leaveGame() {
+    if (this.socket.ws) {
+      this.socket.ws.close();
+    }
+    this.setState("MENU");
+  }
+
   setState(newState) {
     console.log(`Game state: ${this.state} -> ${newState}`);
     this.state = newState;

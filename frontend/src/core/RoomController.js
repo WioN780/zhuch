@@ -53,6 +53,23 @@ export class RoomController {
     }
 
     /**
+     * API: Delete a room (built-in rooms are protected server-side)
+     */
+    async deleteRoom(roomID, customURL = null) {
+        const baseURL = this.getBaseURL(customURL);
+        const response = await fetch(`${baseURL}/delete`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: roomID })
+        });
+        if (!response.ok) {
+            const msg = await response.text();
+            throw new Error(msg);
+        }
+        return true;
+    }
+
+    /**
      * Action: Join a game
      */
     async joinGame(playerName, roomID, customURL = null) {

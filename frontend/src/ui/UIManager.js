@@ -51,14 +51,6 @@ export class UIManager {
                             <option value="custom">Custom Server</option>
                         </select>
                     </div>
-                    <div class="input-group">
-                        <select id="game-mode">
-                            <option value="ffa">Free For All</option>
-                            <option value="zombies">Zombies</option>
-                            <option value="boss">Boss</option>
-                            <option value="practice">Practice (Bots)</option>
-                        </select>
-                    </div>
                     <div class="input-group" id="custom-url-group" style="display: none;">
                         <input type="text" id="custom-url" placeholder="ws://localhost:8080" value="">
                     </div>
@@ -89,6 +81,21 @@ export class UIManager {
                                 <div class="input-group">
                                     <label>Room ID</label>
                                     <input type="text" id="new-room-id" placeholder="Room ID..." maxlength="16">
+                                </div>
+                                <div class="input-row">
+                                    <div class="input-group">
+                                        <label>Mode</label>
+                                        <select id="new-room-mode">
+                                            <option value="ffa">Free For All</option>
+                                            <option value="zombies">Zombies</option>
+                                            <option value="boss">Boss</option>
+                                            <option value="practice">Practice (Bots)</option>
+                                        </select>
+                                    </div>
+                                    <div class="input-group">
+                                        <label>Bots (0 = default)</label>
+                                        <input type="number" id="new-room-bots" value="0" min="0" max="50">
+                                    </div>
                                 </div>
                                 <div class="input-row">
                                     <div class="input-group">
@@ -263,7 +270,6 @@ export class UIManager {
     const startBtn = document.getElementById("start-btn");
     const nameInput = document.getElementById("player-name");
     const roomSelect = document.getElementById("room-id");
-    const modeSelect = document.getElementById("game-mode");
     const customUrlGroup = document.getElementById("custom-url-group");
     const customUrlInput = document.getElementById("custom-url");
 
@@ -294,42 +300,19 @@ export class UIManager {
         return;
       }
 
+      // Rooms are the unit of play: "Join Game" is a quick-join into the
+      // server's default room; every other room is entered from the Active
+      // Rooms list after being explicitly created via the Create Room modal.
       const selectedRoom = roomSelect.value;
-      const mode = modeSelect.value;
-      let roomID = "default";
       let customURL = null;
 
       if (selectedRoom === "local") {
         customURL = "localhost:8080";
-        roomID = "default";
       } else if (selectedRoom === "custom") {
         customURL = customUrlInput.value.trim();
-        roomID = "default";
-      } else {
-        roomID = selectedRoom;
       }
 
-      // Non-ffa modes get their own room: "practice" matches the server's
-      // built-in practice room, others get a fresh generated room id.
-      if (mode !== "ffa") {
-        roomID =
-          mode === "practice" ? "practice" : `${mode}-${Date.now().toString(36)}`;
-        try {
-          await this.game.roomController.createRoom(
-            roomID,
-            {},
-            customURL,
-            mode,
-          );
-        } catch (err) {
-          if (!err.message.includes("already exists")) {
-            this.showError(`Failed to create ${mode} room: ${err.message}`);
-            return;
-          }
-        }
-      }
-
-      this.game.roomController.joinGame(name, roomID, customURL);
+      this.game.roomController.joinGame(name, "default", customURL);
     };
 
     createRoomBtn.onclick = () => {
@@ -443,17 +426,23 @@ export class UIManager {
       else if (roomSelect.value === "custom")
         customURL = customUrlInput.value.trim();
 
+      const mode = document.getElementById("new-room-mode").value;
+      const botCount =
+        parseInt(document.getElementById("new-room-bots").value, 10) || 0;
+
       try {
         const success = await this.game.roomController.createRoom(
           roomID,
           config,
           customURL,
+          mode,
+          null,
+          botCount,
         );
         if (success) {
           createModal.style.display = "none";
           // Update room list immediately
           updateRoomList();
-          roomSelect.value = roomID;
           this.showError("Room created successfully!");
         }
       } catch (err) {
@@ -474,14 +463,6 @@ export class UIManager {
 
         const rooms = await this.game.roomController.fetchRooms(customURL);
 
-        // Preserve current selection if it still exists, or default to first
-        const currentVal = roomSelect.value;
-
-        // Clear all except hardcoded options in select
-        while (roomSelect.options.length > 3) {
-          roomSelect.remove(3);
-        }
-
         // Clear panel
         roomsListContainer.innerHTML = "";
 
@@ -489,29 +470,19 @@ export class UIManager {
           roomsListContainer.innerHTML =
             '<div class="rooms-placeholder">No active rooms found</div>';
         } else {
+          const protectedRooms = ["default", "practice"];
           rooms.forEach((room) => {
-            // Dropdown populating
-            if (room.ID !== "default") {
-              const option = document.createElement("option");
-              option.value = room.ID;
-              option.text = room.ID;
-              roomSelect.add(option);
-            }
-
-            // List panel populating
             const item = document.createElement("div");
             item.className = "room-item glass";
-            const tps = room.Game?.Config?.ticks_per_second || "??";
-            const players = room.Hub?.Clients
-              ? Object.keys(room.Hub.Clients).length
-              : 0;
+            const deletable = !protectedRooms.includes(room.id);
 
             item.innerHTML = `
                 <div class="room-info">
-                    <div class="room-name">${room.ID}</div>
-                    <div class="room-details">${tps} TPS • ${players} players</div>
+                    <div class="room-name">${room.id}</div>
+                    <div class="room-details">${room.mode} • ${room.players} players • ${room.bots} bots</div>
                 </div>
                 <button class="join-room-small-btn button">Join</button>
+                ${deletable ? '<button class="delete-room-btn button" title="Delete room">✕</button>' : ""}
             `;
 
             item.querySelector(".join-room-small-btn").onclick = () => {
@@ -521,15 +492,24 @@ export class UIManager {
                 nameInput.focus();
                 return;
               }
-              this.game.roomController.joinGame(name, room.ID, customURL);
+              this.game.roomController.joinGame(name, room.id, customURL);
             };
+
+            const deleteBtn = item.querySelector(".delete-room-btn");
+            if (deleteBtn) {
+              deleteBtn.onclick = async () => {
+                try {
+                  await this.game.roomController.deleteRoom(room.id, customURL);
+                  updateRoomList();
+                } catch (err) {
+                  this.showError(`Failed to delete room: ${err.message}`);
+                }
+              };
+            }
 
             roomsListContainer.appendChild(item);
           });
         }
-
-        // Try to restore selection
-        roomSelect.value = currentVal;
       } catch (err) {
         console.error("Failed to update room list:", err);
       } finally {
@@ -574,7 +554,7 @@ export class UIManager {
     };
 
     document.getElementById("menu-btn").onclick = () => {
-      this.game.setState("MENU");
+      this.game.leaveGame();
     };
   }
 
