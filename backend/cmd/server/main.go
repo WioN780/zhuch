@@ -29,8 +29,23 @@ func main() {
 
 	ctrl := socket.NewRoomController(manager)
 
-	http.HandleFunc("/rooms", ctrl.HandleListRooms)
-	http.HandleFunc("/create", ctrl.HandleCreate)
+	// The frontend is served from a different origin (Vite dev / static host),
+	// so the REST endpoints need CORS; websockets are exempt by spec.
+	cors := func(h http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			h(w, r)
+		}
+	}
+
+	http.HandleFunc("/rooms", cors(ctrl.HandleListRooms))
+	http.HandleFunc("/create", cors(ctrl.HandleCreate))
 	http.HandleFunc("/ws", ctrl.HandleWebSocket)
 	http.Handle("/metrics", metrics.Handler())
 
