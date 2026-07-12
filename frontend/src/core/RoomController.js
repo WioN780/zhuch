@@ -7,7 +7,7 @@ export class RoomController {
      * Get the base URL based on the user's selection
      */
     getBaseURL(customURL = null) {
-        let url = customURL || "zhuch-production.up.railway.app";
+        let url = customURL || import.meta.env.VITE_BACKEND_URL || "localhost:8080";
         if (!url.startsWith("http")) {
             url = url.includes("localhost") ? `http://${url}` : `https://${url}`;
         }

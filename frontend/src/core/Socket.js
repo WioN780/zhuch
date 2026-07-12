@@ -29,9 +29,11 @@ export class Socket {
           url += (url.includes("?") ? "&" : "?") + `room=${roomID}`;
         }
       } else {
-        // Default to Production Railway Server
-        // Always use wss for production
-        url = `wss://zhuch-production.up.railway.app/ws?room=${roomID}`;
+        // VITE_BACKEND_URL is baked in at build time (set per-Railway-service,
+        // not hardcoded here). Falls back to the local dev server.
+        const backend = import.meta.env.VITE_BACKEND_URL || "localhost:8080";
+        const proto = backend.includes("localhost") ? "ws" : "wss";
+        url = `${proto}://${backend}/ws?room=${roomID}`;
       }
 
       console.log("Connecting to WebSocket:", url);
