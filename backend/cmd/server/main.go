@@ -10,8 +10,26 @@ import (
 	"zhuch/pkg/engine"
 )
 
+func corsMiddleware(next http.Handler) http.Handler {
+	// ALLOWED_ORIGINS is a comma-separated list, e.g. "https://example.com,https://www.example.com".
+	// Falls back to "*" when unset (local dev).
+	allowed := os.Getenv("ALLOWED_ORIGINS")
+	if allowed == "" {
+		allowed = "*"
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", allowed)
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
-	// Initialize structured logging
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	slog.SetDefault(logger)
 
@@ -29,33 +47,17 @@ func main() {
 
 	ctrl := socket.NewRoomController(manager)
 
-	// The frontend is served from a different origin (Vite dev / static host),
-	// so the REST endpoints need CORS; websockets are exempt by spec.
-	cors := func(h http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-			if r.Method == http.MethodOptions {
-				w.WriteHeader(http.StatusNoContent)
-				return
-			}
-			h(w, r)
-		}
-	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/rooms", ctrl.HandleListRooms)
+	mux.HandleFunc("/create", ctrl.HandleCreate)
+	mux.HandleFunc("/delete", ctrl.HandleDelete)
+	mux.HandleFunc("/ws", ctrl.HandleWebSocket)
+	mux.Handle("/metrics", metrics.Handler())
 
-	http.HandleFunc("/rooms", cors(ctrl.HandleListRooms))
-	http.HandleFunc("/create", cors(ctrl.HandleCreate))
-	http.HandleFunc("/delete", cors(ctrl.HandleDelete))
-	http.HandleFunc("/ws", ctrl.HandleWebSocket)
-	http.Handle("/metrics", metrics.Handler())
-
-	// for cloud
 	addr := "0.0.0.0:" + port
-
 	slog.Info("server starting", "addr", addr)
 
-	if err := http.ListenAndServe(addr, nil); err != nil {
+	if err := http.ListenAndServe(addr, corsMiddleware(mux)); err != nil {
 		slog.Error("server failed", "error", err)
 		os.Exit(1)
 	}

@@ -94,7 +94,7 @@ type PerformanceMetrics struct {
 	EntityCount  int           `json:"entity_count"`
 }
 
-// Game represents a single game
+// Game represents a single game. Not thread-safe — must be accessed from one goroutine only.
 type Game struct {
 	Config      GameConfig
 	Arena       *Arena
@@ -230,9 +230,6 @@ func (g *Game) SpawnBullet(b *Bullet) {
 func (g *Game) Tick() {
 	start := time.Now()
 
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
 	g.CurrentTick++
 
 	survivors := g.Entities[:0]
@@ -302,9 +299,6 @@ func (g *Game) HasEntity(id string) bool {
 }
 
 func (g *Game) GetVisibleEntities(pos Vector2, viewRange float64) []Entity {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
 	visible := make([]Entity, 0)
 	rangeSq := viewRange * viewRange
 
@@ -380,8 +374,6 @@ func (g *Game) processDeath(victim Entity) {
 
 // Reset clears the game state
 func (g *Game) Reset() {
-	g.mu.Lock()
-	defer g.mu.Unlock()
 	g.Entities = make([]Entity, 0)
 	g.CurrentTick = 0
 }

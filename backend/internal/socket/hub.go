@@ -1,164 +1,63 @@
 package socket
 
 import (
-	"encoding/json"
-	"log/slog"
 	"sync"
 	"zhuch/pkg/engine"
 )
 
-// Hub connects clients to a game
+// InputEvent carries a player's input to the room goroutine via a channel.
+type InputEvent struct {
+	TankID string
+	Input  PlayerInput
+}
+
+// Hub holds the communication channels into the room goroutine.
+// It does NOT touch game state directly — that belongs exclusively to the room goroutine.
 type Hub struct {
-	Game    *engine.Game
-	Clients map[*Client]bool // active connections
+	Register     chan *Client
+	Unregister   chan *Client
+	InputCh      chan InputEvent
+	GraceExpired chan string // player name whose grace period expired
 
-	// Channels for thread-safe client connections
-	Register   chan *Client
-	Unregister chan *Client
-	Quit       chan struct{} // room deletion: kick everyone
-
-	mu sync.Mutex
+	// namesMu guards names, which is read from HTTP handler goroutines (IsNameTaken).
+	namesMu sync.RWMutex
+	names   map[string]bool
 }
 
-func NewHub(g *engine.Game) *Hub {
+func NewHub() *Hub {
 	return &Hub{
-		Game:       g,
-		Clients:    make(map[*Client]bool),
-		Register:   make(chan *Client),
-		Unregister: make(chan *Client),
-		Quit:       make(chan struct{}),
+		Register:     make(chan *Client, 8),
+		Unregister:   make(chan *Client, 8),
+		InputCh:      make(chan InputEvent, 256),
+		GraceExpired: make(chan string, 32),
+		names:        make(map[string]bool),
 	}
 }
 
-// Run starts the hub loop
-func (h *Hub) Run() {
-	slog.Info("socket hub starting")
-	for {
-		select {
-		case client := <-h.Register:
-			// SafeSpawnPos takes g.mu internally; call it before h.mu.
-			spawnPos := h.Game.SafeSpawnPos()
-
-			h.mu.Lock()
-			h.Clients[client] = true
-			// Create a tank in the engine!
-			tank := engine.NewTank(client.ClientName, spawnPos, &h.Game.Config)
-			client.TankID = tank.GetID()
-			h.Game.Entities = append(h.Game.Entities, tank)
-			h.mu.Unlock()
-
-			// Send initialization message to the client (obstacles are
-			// static per room, so this is the only time they're sent).
-			initMsg, _ := json.Marshal(map[string]any{
-				"type":      "init",
-				"tank_id":   client.TankID,
-				"config":    h.Game.Config,
-				"obstacles": obstaclePayload(h.Game.Arena.Obstacles),
-			})
-			client.Send <- initMsg
-
-			slog.Info("client registered", "name", client.ClientName, "tank_id", client.TankID, "total_clients", len(h.Clients))
-
-		case client := <-h.Unregister:
-			h.mu.Lock()
-			if _, ok := h.Clients[client]; ok {
-				delete(h.Clients, client)
-				close(client.Send)
-
-				// Remove tank from engine
-				newEntities := h.Game.Entities[:0]
-				for _, e := range h.Game.Entities {
-					if e.GetID() != client.TankID {
-						newEntities = append(newEntities, e)
-					}
-				}
-				h.Game.Entities = newEntities
-				slog.Info("client unregistered", "name", client.ClientName, "tank_id", client.TankID, "total_clients", len(h.Clients))
-			}
-			h.mu.Unlock()
-
-		case <-h.Quit:
-			// Room is being deleted: closing the conns makes each ReadPump
-			// error out and unregister itself through the normal path above.
-			// ponytail: the Run goroutine of a deleted room idles forever;
-			// add a drain-and-return if rooms ever churn at scale.
-			h.mu.Lock()
-			for client := range h.Clients {
-				client.Conn.Close()
-			}
-			h.mu.Unlock()
-		}
-	}
+func (h *Hub) IsNameTaken(name string) bool {
+	h.namesMu.RLock()
+	defer h.namesMu.RUnlock()
+	return h.names[name]
 }
 
-// This prepares and sends filtered snapshots to each client
-func (h *Hub) BroadcastGameState() {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	tankMap := make(map[string]*engine.Tank)
-	for _, e := range h.Game.Entities {
-		if t, ok := e.(*engine.Tank); ok {
-			tankMap[t.GetID()] = t
-		}
-	}
-
-	// Iterate through clients and send their specific view
-	for client := range h.Clients {
-		var visibleEntities []engine.Entity
-		isDead := false
-
-		if tank, exists := tankMap[client.TankID]; exists {
-			// Filter entities by tank's view range
-			visibleEntities = h.Game.GetVisibleEntities(tank.GetPosition(), tank.ViewRange)
-		} else {
-			visibleEntities = []engine.Entity{}
-			isDead = true
-		}
-
-		packet := map[string]interface{}{
-			"entities": visibleEntities,
-			"metrics":  h.Game.Metrics,
-		}
-
-		if isDead {
-			packet["type"] = "dead"
-		}
-
-		state, err := json.Marshal(packet)
-		if err != nil {
-			slog.Error("failed to marshal per-client game state", "error", err)
-			continue
-		}
-
-		select {
-		case client.Send <- state:
-		default:
-			close(client.Send)
-			delete(h.Clients, client)
-		}
-	}
+// PlayerCount returns the number of actively connected players (names claimed).
+// Safe to call from HTTP handler goroutines.
+func (h *Hub) PlayerCount() int {
+	h.namesMu.RLock()
+	defer h.namesMu.RUnlock()
+	return len(h.names)
 }
 
-// ClientCount is a thread-safe count of connected clients (used for the
-// zhuch_players metric).
-func (h *Hub) ClientCount() int {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return len(h.Clients)
+func (h *Hub) claimName(name string) {
+	h.namesMu.Lock()
+	h.names[name] = true
+	h.namesMu.Unlock()
 }
 
-func (h *Hub) isNameTaken(name string) bool {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	for client := range h.Clients {
-		// A client whose tank is gone is a dead spectator; it must not block
-		// its own player from respawning/rejoining under the same name.
-		if client.ClientName == name && h.Game.HasEntity(client.TankID) {
-			return true
-		}
-	}
-	return false
+func (h *Hub) releaseName(name string) {
+	h.namesMu.Lock()
+	delete(h.names, name)
+	h.namesMu.Unlock()
 }
 
 // obstaclePayload flattens Arena.Obstacles to the wire shape for the init

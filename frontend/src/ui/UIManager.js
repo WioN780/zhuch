@@ -12,7 +12,10 @@ export class UIManager {
         this.showMenu();
         break;
       case "CONNECTING":
-        this.showConnecting();
+        this.showConnecting("Connecting to server...");
+        break;
+      case "RECONNECTING":
+        this.showConnecting("Reconnecting...");
         break;
       case "PLAYING":
         this.showHUD();
@@ -269,6 +272,8 @@ export class UIManager {
 
     const startBtn = document.getElementById("start-btn");
     const nameInput = document.getElementById("player-name");
+    const savedName = localStorage.getItem("zhuch_name");
+    if (savedName) nameInput.value = savedName;
     const roomSelect = document.getElementById("room-id");
     const customUrlGroup = document.getElementById("custom-url-group");
     const customUrlInput = document.getElementById("custom-url");
@@ -299,6 +304,7 @@ export class UIManager {
         this.showError("Please enter a name.");
         return;
       }
+      localStorage.setItem("zhuch_name", name);
 
       // Rooms are the unit of play: "Join Game" is a quick-join into the
       // server's default room; every other room is entered from the Active
@@ -441,8 +447,8 @@ export class UIManager {
         );
         if (success) {
           createModal.style.display = "none";
-          // Update room list immediately
-          updateRoomList();
+          await updateRoomList();
+          document.getElementById("room-id").value = roomID;
           this.showError("Room created successfully!");
         }
       } catch (err) {
@@ -472,6 +478,19 @@ export class UIManager {
         } else {
           const protectedRooms = ["default", "practice"];
           rooms.forEach((room) => {
+            // Dropdown populating (skip "default", already a static option;
+            // guard against dupes since this reruns every 10s poll).
+            if (
+              room.id !== "default" &&
+              !Array.from(roomSelect.options).some((o) => o.value === room.id)
+            ) {
+              const option = document.createElement("option");
+              option.value = room.id;
+              option.text = room.id;
+              roomSelect.add(option);
+            }
+
+            // List panel populating
             const item = document.createElement("div");
             item.className = "room-item glass";
             const deletable = !protectedRooms.includes(room.id);
@@ -479,7 +498,7 @@ export class UIManager {
             item.innerHTML = `
                 <div class="room-info">
                     <div class="room-name">${room.id}</div>
-                    <div class="room-details">${room.mode} • ${room.players} players • ${room.bots} bots</div>
+                    <div class="room-details">${room.mode || "ffa"} • ${room.players || 0} players • ${room.bots || 0} bots</div>
                 </div>
                 <button class="join-room-small-btn button">Join</button>
                 ${deletable ? '<button class="delete-room-btn button" title="Delete room">✕</button>' : ""}
@@ -522,13 +541,13 @@ export class UIManager {
     setInterval(updateRoomList, 10000);
   }
 
-  showConnecting() {
+  showConnecting(message = "Connecting to server...") {
     const screen = document.createElement("div");
     screen.className = "screen connecting-screen";
     screen.innerHTML = `
             <div class="loader-content">
                 <div class="spinner"></div>
-                <p>Connecting to server...</p>
+                <p>${message}</p>
             </div>
         `;
     this.container.appendChild(screen);
@@ -554,7 +573,8 @@ export class UIManager {
     };
 
     document.getElementById("menu-btn").onclick = () => {
-      this.game.leaveGame();
+      // Explicitly leaving the game — don't auto-resume on next load.
+      this.game.leaveRoom();
     };
   }
 

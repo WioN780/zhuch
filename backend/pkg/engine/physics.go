@@ -90,18 +90,19 @@ func getCoord(pos Vector2, cellSize float64) GridCoord {
 	}
 }
 
-// CheckAllCollisions just triggers interactions between nearby objects
+// CheckAllCollisions detects and resolves collisions between nearby entities.
+// Runs sequentially on the room goroutine — no locks needed, no goroutine overhead.
 func (g *Game) CheckAllCollisions(arena *Arena) {
-	var allCollidables []Collidable
+	var all []Collidable
 	for _, e := range g.Entities {
-		allCollidables = append(allCollidables, e.(Collidable))
+		all = append(all, e.(Collidable))
 	}
 	for _, obs := range arena.Obstacles {
-		allCollidables = append(allCollidables, &StaticCollidable{Object: obs})
+		all = append(all, &StaticCollidable{Object: obs})
 	}
 
 	grid := make(map[GridCoord][]Collidable)
-	for _, c := range allCollidables {
+	for _, c := range all {
 		coord := getCoord(c.GetPosition(), g.Config.CellSize)
 		grid[coord] = append(grid[coord], c)
 	}
@@ -113,23 +114,17 @@ func (g *Game) CheckAllCollisions(arena *Arena) {
 
 	// Sequential on purpose: pairs (A,B) and (B,C) both mutate B, so
 	// per-entity goroutines were a data race. Determinism needs order too.
-	for _, obj1 := range allCollidables {
-		if obj1.IsStatic() {
+	for _, c1 := range all {
+		if c1.IsStatic() {
 			continue
 		}
-
-		baseCoord := getCoord(obj1.GetPosition(), g.Config.CellSize)
-
-		for _, offset := range offsets {
-			checkCoord := GridCoord{X: baseCoord.X + offset.X, Y: baseCoord.Y + offset.Y}
-
-			if cellObjects, exists := grid[checkCoord]; exists {
-				for _, obj2 := range cellObjects {
-					if obj1.GetID() < obj2.GetID() {
-						if hit, normal, overlap := obj1.GetGeom().Intersects(obj2.GetGeom()); hit {
-							obj1.OnCollision(obj2, normal, overlap)
-							obj2.OnCollision(obj1, normal.Scale(-1), overlap)
-						}
+		base := getCoord(c1.GetPosition(), g.Config.CellSize)
+		for _, off := range offsets {
+			for _, c2 := range grid[GridCoord{X: base.X + off.X, Y: base.Y + off.Y}] {
+				if c1.GetID() < c2.GetID() {
+					if hit, normal, overlap := c1.GetGeom().Intersects(c2.GetGeom()); hit {
+						c1.OnCollision(c2, normal, overlap)
+						c2.OnCollision(c1, normal.Scale(-1), overlap)
 					}
 				}
 			}

@@ -1,0 +1,7 @@
+[build]
+builder = "DOCKERFILE"
+
+[deploy]
+healthcheckPath = "/rooms"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"

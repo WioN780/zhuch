@@ -41,13 +41,39 @@ export class Game {
     this.socket = new Socket(this);
     this.roomController = new RoomController(this);
 
-    // Set initial state
-    this.setState("MENU");
+    // If a previous session is stored, try to resume it (into the server's
+    // grace window); otherwise fall back to the menu.
+    await this.resumeSession();
 
     // Start main loop
     this.app.ticker.add((ticker) => {
       this.update(ticker.deltaTime, ticker.deltaMS);
     });
+  }
+
+  // Attempt to resume a stored session after a page reload. If the room is gone
+  // or the connection fails, clear the stale session and show the menu.
+  async resumeSession() {
+    const session = this.socket.loadSession();
+    if (!session || !session.playerName || !session.roomID) {
+      this.setState("MENU");
+      return;
+    }
+
+    console.log("Resuming session:", session);
+    this.setState("CONNECTING");
+    try {
+      await this.socket.connect(
+        session.playerName,
+        session.roomID,
+        session.customURL,
+      );
+      this.setState("PLAYING");
+    } catch (err) {
+      console.warn("Session resume failed:", err);
+      this.socket.clearSession();
+      this.setState("MENU");
+    }
   }
 
   // Called when server sends 'init' or config update
@@ -85,6 +111,17 @@ export class Game {
     }
   }
 
+  // Resign: leave the room, drop the stored session, and return to the menu.
+  // The server starts a grace period on disconnect, then removes the tank.
+  leaveRoom() {
+    if (this.state === "MENU" || this.state === "INITIALIZING") return;
+    this.socket.clearSession();
+    if (this.socket.ws) {
+      this.socket.ws.close();
+    }
+    this.setState("MENU");
+  }
+
   async respawn() {
     const name = this.socket.playerName;
     const room = this.socket.roomID;
@@ -95,16 +132,6 @@ export class Game {
     }
 
     await this.connect(name, room, customURL);
-  }
-
-  // Leaving must close the socket: a lingering connection keeps the dead
-  // spectator client registered server-side (blocking the name) and its
-  // per-tick "dead" packets would instantly kill the next session's UI.
-  leaveGame() {
-    if (this.socket.ws) {
-      this.socket.ws.close();
-    }
-    this.setState("MENU");
   }
 
   setState(newState) {

@@ -21,7 +21,7 @@ func NewRoomController(m *Manager) *RoomController {
 }
 
 // RoomSummary is the public shape of a room. The Room struct itself is not
-// serializable (Hub.Clients has pointer keys) and would leak game internals.
+// serializable (channels, mutexes) and would leak game internals.
 type RoomSummary struct {
 	ID      string `json:"id"`
 	Mode    string `json:"mode"`
@@ -37,16 +37,19 @@ func (c *RoomController) HandleListRooms(w http.ResponseWriter, r *http.Request)
 	summaries := make([]RoomSummary, 0, len(rooms))
 	for _, room := range rooms {
 		summaries = append(summaries, RoomSummary{
-			ID:      room.ID,
-			Mode:    string(room.Bots.Mode),
-			Players: room.Hub.ClientCount(),
+			ID:   room.ID,
+			Mode: string(room.Bots.Mode),
+			// Config is immutable after NewGame, so this read is goroutine-safe.
+			Players: room.Hub.PlayerCount(),
 			Bots:    room.Bots.BotCount(),
 			TPS:     room.Game.Config.TicksPerSecond,
 		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(summaries)
+	if err := json.NewEncoder(w).Encode(summaries); err != nil {
+		slog.Error("failed to encode rooms", "error", err)
+	}
 }
 
 // protectedRooms are seeded at startup and always available; deleting them
@@ -171,7 +174,15 @@ func (c *RoomController) HandleWebSocket(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if room.Hub.isNameTaken(playerName) {
+	if len(playerName) > 24 {
+		slog.Warn("connection rejected: name too long", "remote_addr", r.RemoteAddr)
+		errMsg, _ := json.Marshal(map[string]string{"type": "error", "message": "Name too long (max 24 chars)"})
+		conn.WriteMessage(websocket.TextMessage, errMsg)
+		conn.Close()
+		return
+	}
+
+	if room.Hub.IsNameTaken(playerName) {
 		slog.Warn("connection rejected: name taken", "name", playerName)
 		errMsg, _ := json.Marshal(map[string]string{"type": "error", "message": "Name already in use"})
 		conn.WriteMessage(websocket.TextMessage, errMsg)
