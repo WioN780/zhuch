@@ -230,6 +230,9 @@ func (g *Game) SpawnBullet(b *Bullet) {
 func (g *Game) Tick() {
 	start := time.Now()
 
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
 	g.CurrentTick++
 
 	survivors := g.Entities[:0]
