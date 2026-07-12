@@ -21,7 +21,7 @@ jobs:
       # env here and test the env var in the step condition below.
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # GHCR image names must be lowercase; the repo owner may not be.
       - name: Compute lowercase owner
