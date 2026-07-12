@@ -19,7 +19,7 @@ import (
 	"zhuch/pkg/engine"
 )
 
-var mlpSizes = []int{82, 64, 64, 5} // contracts §3
+var mlpSizes = []int{90, 64, 64, 5} // contracts §3
 
 // Inert unless KAFKA_BROKERS is set. telemetryOn guards the per-tick
 // pos_sample loop so the hot path stays branch-cheap when disabled.
@@ -46,11 +46,14 @@ type EvalRequest struct {
 }
 
 type TankResult struct {
-	Name      string  `json:"name"`
-	Score     float64 `json:"score"`
-	Kills     int     `json:"kills"`
-	DeathTick int     `json:"death_tick"`
-	Alive     bool    `json:"alive"`
+	Name       string  `json:"name"`
+	Score      float64 `json:"score"`
+	Kills      int     `json:"kills"`
+	DeathTick  int     `json:"death_tick"`
+	Alive      bool    `json:"alive"`
+	ShotsFired int     `json:"shots_fired"`
+	HitsTank   int     `json:"hits_tank"`
+	HitsFood   int     `json:"hits_food"`
 }
 
 type EvalResponse struct {
@@ -96,11 +99,8 @@ func runEpisode(req EvalRequest) (*EvalResponse, error) {
 		if spec.Spawn != nil {
 			pos = engine.Vector2{X: spec.Spawn.X, Y: spec.Spawn.Y}
 		} else {
-			// Seeded-random spawn with 100-unit wall margin (deterministic per seed).
-			pos = engine.Vector2{
-				X: 100 + g.Rng.Float64()*(cfg.MapWidth-200),
-				Y: 100 + g.Rng.Float64()*(cfg.MapHeight-200),
-			}
+			// Seeded-random, obstacle-avoiding spawn (deterministic per seed).
+			pos = g.SafeSpawnPos()
 		}
 		t := engine.NewTank(spec.Name, pos, &g.Config)
 		g.SpawnTank(t)
@@ -160,11 +160,14 @@ func runEpisode(req EvalRequest) (*EvalResponse, error) {
 	resp := &EvalResponse{Ticks: g.CurrentTick, Tanks: make([]TankResult, n)}
 	for i, t := range tanks {
 		resp.Tanks[i] = TankResult{
-			Name:      req.Tanks[i].Name,
-			Score:     t.Score,
-			Kills:     t.Kills,
-			DeathTick: deathTick[i],
-			Alive:     deathTick[i] == -1,
+			Name:       req.Tanks[i].Name,
+			Score:      t.Score,
+			Kills:      t.Kills,
+			DeathTick:  deathTick[i],
+			Alive:      deathTick[i] == -1,
+			ShotsFired: t.ShotsFired,
+			HitsTank:   t.HitsTank,
+			HitsFood:   t.HitsFood,
 		}
 	}
 	episodeFinished(resp, time.Since(episodeStart))

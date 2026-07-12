@@ -142,11 +142,7 @@ func (bs *BotSet) Act(g *engine.Game, tick int) {
 }
 
 func randomSpawnPos(g *engine.Game) engine.Vector2 {
-	// Seeded-random with a 100-unit wall margin, same convention as arena.
-	return engine.Vector2{
-		X: 100 + g.Rng.Float64()*(g.Config.MapWidth-200),
-		Y: 100 + g.Rng.Float64()*(g.Config.MapHeight-200),
-	}
+	return g.SafeSpawnPos()
 }
 
 func (bs *BotSet) newBot(t *engine.Tank) *bots.Bot {

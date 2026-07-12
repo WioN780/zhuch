@@ -5,7 +5,7 @@ from zhuch_train.genome import Genome, param_count
 
 
 def test_param_count():
-    assert param_count() == 9797  # contracts section 3
+    assert param_count() == 10309  # contracts section 3 (v2: 90 inputs)
 
 
 def test_model_json_roundtrip(tmp_path):

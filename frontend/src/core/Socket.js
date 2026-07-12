@@ -97,6 +97,9 @@ export class Socket {
     if (data.type === "init") {
       this.game.renderer.setPlayerID(data.tank_id);
       this.game.applyServerConfig(data.config);
+      if (Array.isArray(data.obstacles)) {
+        this.game.renderer.setObstacles(data.obstacles);
+      }
       return;
     }
 

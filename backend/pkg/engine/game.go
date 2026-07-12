@@ -15,6 +15,7 @@ type GameConfig struct {
 	MapHeight      float64 `json:"map_height"`
 	CellSize       float64 `json:"cell_size"`
 	MaxFood        int     `json:"max_food"`
+	ObstacleCount  int     `json:"obstacle_count"`
 
 	// Tank Defaults
 	TankRadius       float64 `json:"tank_radius"`
@@ -54,10 +55,11 @@ func DefaultConfig() GameConfig {
 	return GameConfig{
 		TicksPerSecond: 20,
 		Friction:       0.9,
-		MapWidth:       2000,
-		MapHeight:      2000,
+		MapWidth:       4000,
+		MapHeight:      4000,
 		CellSize:       100,
-		MaxFood:        50,
+		MaxFood:        120,
+		ObstacleCount:  12,
 
 		TankRadius:       20.0,
 		TankMaxHealth:    100.0,
@@ -118,13 +120,86 @@ func NewGame(config GameConfig) *Game {
 // NewGameSeeded creates a game whose randomness (food spawns, etc.) is
 // fully determined by seed, so seeded games replay identically.
 func NewGameSeeded(config GameConfig, seed int64) *Game {
-	return &Game{
+	g := &Game{
 		Config:   config,
 		Arena:    NewArena(config.MapWidth, config.MapHeight),
 		Entities: make([]Entity, 0),
 		Rng:      rand.New(rand.NewSource(seed)),
 		IsActive: false,
 	}
+	g.generateObstacles()
+	return g
+}
+
+// generateObstacles seeds Arena.Obstacles deterministically from g.Rng:
+// circle radius 60-140, positioned with a 250-unit margin from the walls,
+// reject-and-retry (max 20 tries) on overlap with an already-placed
+// obstacle so they don't fuse into each other.
+func (g *Game) generateObstacles() {
+	const margin, minR, maxR = 250.0, 60.0, 140.0
+	for i := 0; i < g.Config.ObstacleCount; i++ {
+		for try := 0; try < 20; try++ {
+			r := minR + g.Rng.Float64()*(maxR-minR)
+			c := &Circle{
+				Center: Vector2{
+					X: margin + g.Rng.Float64()*(g.Config.MapWidth-2*margin),
+					Y: margin + g.Rng.Float64()*(g.Config.MapHeight-2*margin),
+				},
+				Radius: r,
+			}
+			if !obstacleOverlaps(g.Arena.Obstacles, c) {
+				g.Arena.Obstacles = append(g.Arena.Obstacles, c)
+				break
+			}
+		}
+	}
+}
+
+func obstacleOverlaps(existing []GeomObject, c *Circle) bool {
+	for _, obs := range existing {
+		if oc, ok := obs.(*Circle); ok {
+			rr := oc.Radius + c.Radius
+			if oc.Center.DistanceSquaredTo(c.Center) < rr*rr {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// insideObstacle reports whether pos lands inside any obstacle, padded by
+// slack, so spawn logic can avoid embedding entities in one.
+func (g *Game) insideObstacle(pos Vector2, slack float64) bool {
+	for _, obs := range g.Arena.Obstacles {
+		if c, ok := obs.(*Circle); ok {
+			r := c.Radius + slack
+			if pos.DistanceSquaredTo(c.Center) <= r*r {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// SafeSpawnPos returns a random spawn position with a 100-unit wall margin,
+// retrying (max 10 tries) any position that lands inside an obstacle (40-unit
+// slack) so tanks don't spawn embedded in one. Used by both the live hub
+// (Hub.Register) and the arena's default/random spawn.
+func (g *Game) SafeSpawnPos() Vector2 {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	const margin = 100.0
+	pos := Vector2{
+		X: margin + g.Rng.Float64()*(g.Config.MapWidth-2*margin),
+		Y: margin + g.Rng.Float64()*(g.Config.MapHeight-2*margin),
+	}
+	for try := 0; try < 10 && g.insideObstacle(pos, 40.0); try++ {
+		pos = Vector2{
+			X: margin + g.Rng.Float64()*(g.Config.MapWidth-2*margin),
+			Y: margin + g.Rng.Float64()*(g.Config.MapHeight-2*margin),
+		}
+	}
+	return pos
 }
 
 // newID returns a deterministic per-game entity ID. Caller must hold g.mu.
@@ -242,8 +317,11 @@ func (g *Game) GetVisibleEntities(pos Vector2, viewRange float64) []Entity {
 }
 
 func (g *Game) spawnRandomFood() {
-	x := g.Rng.Float64() * g.Config.MapWidth
-	y := g.Rng.Float64() * g.Config.MapHeight
+	pos := Vector2{X: g.Rng.Float64() * g.Config.MapWidth, Y: g.Rng.Float64() * g.Config.MapHeight}
+	for try := 0; try < 10 && g.insideObstacle(pos, 40.0); try++ {
+		pos = Vector2{X: g.Rng.Float64() * g.Config.MapWidth, Y: g.Rng.Float64() * g.Config.MapHeight}
+	}
+	x, y := pos.X, pos.Y
 
 	roll := g.Rng.Float64()
 	var fType FoodType

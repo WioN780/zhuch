@@ -36,19 +36,24 @@ func (h *Hub) Run() {
 	for {
 		select {
 		case client := <-h.Register:
+			// SafeSpawnPos takes g.mu internally; call it before h.mu.
+			spawnPos := h.Game.SafeSpawnPos()
+
 			h.mu.Lock()
 			h.Clients[client] = true
 			// Create a tank in the engine!
-			tank := engine.NewTank(client.ClientName, engine.Vector2{X: 100, Y: 100}, &h.Game.Config)
+			tank := engine.NewTank(client.ClientName, spawnPos, &h.Game.Config)
 			client.TankID = tank.GetID()
 			h.Game.Entities = append(h.Game.Entities, tank)
 			h.mu.Unlock()
 
-			// Send initialization message to the client
+			// Send initialization message to the client (obstacles are
+			// static per room, so this is the only time they're sent).
 			initMsg, _ := json.Marshal(map[string]any{
-				"type":    "init",
-				"tank_id": client.TankID,
-				"config":  h.Game.Config,
+				"type":      "init",
+				"tank_id":   client.TankID,
+				"config":    h.Game.Config,
+				"obstacles": obstaclePayload(h.Game.Arena.Obstacles),
 			})
 			client.Send <- initMsg
 
@@ -154,4 +159,16 @@ func (h *Hub) isNameTaken(name string) bool {
 		}
 	}
 	return false
+}
+
+// obstaclePayload flattens Arena.Obstacles to the wire shape for the init
+// message: [{"x":..,"y":..,"radius":..}]. Only circle obstacles exist today.
+func obstaclePayload(obstacles []engine.GeomObject) []map[string]float64 {
+	out := make([]map[string]float64, 0, len(obstacles))
+	for _, obs := range obstacles {
+		if c, ok := obs.(*engine.Circle); ok {
+			out = append(out, map[string]float64{"x": c.Center.X, "y": c.Center.Y, "radius": c.Radius})
+		}
+	}
+	return out
 }

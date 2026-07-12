@@ -34,8 +34,12 @@ def eval_one(job: dict) -> dict:
         else:
             alive = bool(rng.random() < 0.5)
             death = int(rng.integers(1, ticks + 1)) if not alive else -1
+        shots_fired = int(rng.integers(0, 60))
+        hits_tank = int(rng.integers(0, shots_fired + 1))
+        hits_food = int(rng.integers(0, shots_fired - hits_tank + 1))
         out.append({"name": t.get("name", f"t{i}"), "score": int(rng.integers(0, 400)),
-                    "kills": int(rng.integers(0, 3)), "death_tick": death, "alive": alive})
+                    "kills": int(rng.integers(0, 3)), "death_tick": death, "alive": alive,
+                    "shots_fired": shots_fired, "hits_tank": hits_tank, "hits_food": hits_food})
     return {"ticks": ticks, "tanks": out}
 
 

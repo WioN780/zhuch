@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-SIZES: tuple[int, ...] = (82, 64, 64, 5)
+SIZES: tuple[int, ...] = (90, 64, 64, 5)
 
 
 def param_count(sizes: tuple[int, ...] = SIZES) -> int:

@@ -33,21 +33,23 @@ class ArenaClient:
                     time.sleep(self.backoff * 2 ** attempt)
         raise RuntimeError(f"arena request failed after {self.retries + 1} attempts: {last}")
 
-    def eval_batch(self, jobs: list[dict]) -> list[dict]:
-        """POST jobs split across arena URLs, one thread per URL; results in job order."""
+    def eval_batch(self, jobs: list[dict], max_chunk_size: int = 128) -> list[dict]:
+        """POST jobs split across arena URLs, chunked to prevent OOM errors on the server."""
         if not jobs:
             return []
-        n_chunks = min(len(self.urls), len(jobs))
-        bounds = np.linspace(0, len(jobs), n_chunks + 1).astype(int)
+        chunks = [jobs[i:i + max_chunk_size] for i in range(0, len(jobs), max_chunk_size)]
         results: list[dict | None] = [None] * len(jobs)
 
-        def post_chunk(url: str, lo: int, hi: int) -> None:
-            resp = self._post(url, "/eval_batch", {"jobs": jobs[lo:hi]})
-            results[lo:hi] = resp["results"]
+        def post_chunk_with_offset(url: str, chunk: list[dict], offset: int) -> None:
+            resp = self._post(url, "/eval_batch", {"jobs": chunk})
+            results[offset:offset + len(chunk)] = resp["results"]
 
-        with ThreadPoolExecutor(max_workers=n_chunks) as ex:
-            futs = [ex.submit(post_chunk, self.urls[i], int(bounds[i]), int(bounds[i + 1]))
-                    for i in range(n_chunks)]
+        with ThreadPoolExecutor(max_workers=len(self.urls)) as ex:
+            futs = []
+            for idx, chunk in enumerate(chunks):
+                url = self.urls[idx % len(self.urls)]
+                offset = idx * max_chunk_size
+                futs.append(ex.submit(post_chunk_with_offset, url, chunk, offset))
             for f in futs:
                 f.result()  # re-raise failures
         return results  # type: ignore[return-value]

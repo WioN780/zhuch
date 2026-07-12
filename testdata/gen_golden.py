@@ -48,4 +48,4 @@ def make(sizes, seed, name):
 
 if __name__ == "__main__":
     make([3, 4, 2], seed=7, name="golden_mlp_tiny.json")
-    make([82, 64, 64, 5], seed=42, name="golden_mlp_full.json")
+    make([90, 64, 64, 5], seed=42, name="golden_mlp_full.json")
