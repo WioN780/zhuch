@@ -1,0 +1,26 @@
+# ClusterIP, not headless: eval_batch calls fan out across many short-lived
+# HTTP requests, and a normal Service's per-request kube-proxy load
+# balancing already spreads those evenly across all arena pods. A headless
+# Service (DNS returns all pod IPs) only pays off if the client needs to
+# pick pods itself — training/scripts/train.py doesn't, it just calls
+# --arena-urls in a round-robin over whatever URLs it's given. So the
+# trainer Job is wired to call this one Service URL, repeated N times (see
+# values.yaml trainer.arenaUrlCount / templates/trainer-job.yaml) rather
+# than address pods individually. See infra/k8s.md for the benchmark that
+# justifies this.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "zhuch.arena.fullname" . }}
+  labels:
+    {{- include "zhuch.labels" . | nindent 4 }}
+    app.kubernetes.io/component: arena
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "zhuch.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: arena
+  ports:
+    - name: http
+      port: {{ .Values.arena.port }}
+      targetPort: http

@@ -1,0 +1,82 @@
+# Single-node Airflow (LocalExecutor) running dags/nightly_retrain.py. Separate
+# postgres from infra/compose's mlops stack so this compose file stands alone.
+#
+# Usage (from infra/airflow/):
+#   docker compose -f docker-compose.airflow.yml up airflow-init   # one-shot db init
+#   docker compose -f docker-compose.airflow.yml up -d
+#   -> http://localhost:8090 (admin/admin)
+#
+# ZHUCH_REPO_ROOT (host env var, defaults to the repo checkout two levels up) is
+# bind-mounted at /opt/zhuch. See README.md for required env / Airflow Variables.
+name: zhuch-airflow
+
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.10.5-python3.11
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    # Paths/URLs used by dags/nightly_retrain.py's BashOperators, documented in README.md.
+    ZHUCH_REPO_ROOT: /opt/zhuch
+    ZHUCH_TRAINING_PYTHON: /opt/zhuch/training/.venv/bin/python
+    ZHUCH_ANALYTICS_PYTHON: /opt/zhuch/analytics/.venv/bin/python
+    ZHUCH_PARQUET_ROOT: /opt/zhuch/analytics/out
+    ZHUCH_SUMMARY_ROOT: /opt/zhuch/analytics/out_summary
+    ZHUCH_RUN_DIR: /opt/zhuch/training/runs/prod
+    ZHUCH_MODEL_PATH: /opt/zhuch/training/runs/prod/best.json
+    ARENA_URL: ${ARENA_URL:-http://host.docker.internal:8081}
+    MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-}
+    EVAL_GATE_ELO: ${EVAL_GATE_ELO:-1250}
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - airflow-logs:/opt/airflow/logs
+    - ${ZHUCH_REPO_ROOT:-../..}:/opt/zhuch
+  depends_on:
+    postgres:
+      condition: service_healthy
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - "airflow db migrate && (airflow users create --username admin --password admin --firstname a --lastname b --role Admin --email admin@example.com || true)"
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8090:8080"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+volumes:
+  airflow-pgdata:
+  airflow-logs:

@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+
+	internalbots "zhuch/internal/bots"
 	"zhuch/pkg/engine"
 
 	"github.com/gorilla/websocket"
@@ -18,33 +20,67 @@ func NewRoomController(m *Manager) *RoomController {
 	return &RoomController{Manager: m}
 }
 
-// roomInfo is the serializable view of a Room sent to clients. The Room struct
-// itself contains unmarshalable fields (channels, mutexes) and must never be
-// JSON-encoded directly.
-type roomInfo struct {
+// RoomSummary is the public shape of a room. The Room struct itself is not
+// serializable (channels, mutexes) and would leak game internals.
+type RoomSummary struct {
 	ID      string `json:"id"`
-	TPS     int    `json:"tps"`
+	Mode    string `json:"mode"`
 	Players int    `json:"players"`
+	Bots    int    `json:"bots"`
+	TPS     int    `json:"tps"`
 }
 
 // API: GET /rooms
 func (c *RoomController) HandleListRooms(w http.ResponseWriter, r *http.Request) {
 	rooms := c.Manager.ListRooms()
 
-	infos := make([]roomInfo, 0, len(rooms))
+	summaries := make([]RoomSummary, 0, len(rooms))
 	for _, room := range rooms {
-		infos = append(infos, roomInfo{
-			ID: room.ID,
+		summaries = append(summaries, RoomSummary{
+			ID:   room.ID,
+			Mode: string(room.Bots.Mode),
 			// Config is immutable after NewGame, so this read is goroutine-safe.
-			TPS:     room.Game.Config.TicksPerSecond,
 			Players: room.Hub.PlayerCount(),
+			Bots:    room.Bots.BotCount(),
+			TPS:     room.Game.Config.TicksPerSecond,
 		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(infos); err != nil {
+	if err := json.NewEncoder(w).Encode(summaries); err != nil {
 		slog.Error("failed to encode rooms", "error", err)
 	}
+}
+
+// protectedRooms are seeded at startup and always available; deleting them
+// would leave the public demo without a guaranteed room.
+var protectedRooms = map[string]bool{"default": true, "practice": true}
+
+// API: POST /delete
+func (c *RoomController) HandleDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID == "" {
+		http.Error(w, "Room ID required", http.StatusBadRequest)
+		return
+	}
+	if protectedRooms[req.ID] {
+		http.Error(w, "Cannot delete a built-in room", http.StatusForbidden)
+		return
+	}
+	if !c.Manager.RemoveRoom(req.ID) {
+		http.Error(w, "Room not found", http.StatusNotFound)
+		return
+	}
+
+	slog.Info("room deleted", "id", req.ID)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // API: POST /create
@@ -55,8 +91,11 @@ func (c *RoomController) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		ID     string            `json:"id"`
-		Config engine.GameConfig `json:"config"`
+		ID       string            `json:"id"`
+		Config   engine.GameConfig `json:"config"`
+		Mode     string            `json:"mode"`
+		BotModel string            `json:"bot_model"`
+		BotCount int               `json:"bot_count"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -69,18 +108,31 @@ func (c *RoomController) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	mode := req.Mode
+	if mode == "" {
+		mode = "ffa"
+	}
+	if !internalbots.ValidMode(mode) {
+		http.Error(w, "Invalid mode: must be one of ffa, zombies, boss, practice", http.StatusBadRequest)
+		return
+	}
+	botModel := req.BotModel
+	if botModel == "" {
+		botModel = "champion"
+	}
+
 	config := req.Config
 	if config.TicksPerSecond == 0 {
 		config = engine.DefaultConfig()
 	}
 
-	room := c.Manager.CreateRoom(req.ID, config)
+	room := c.Manager.CreateRoom(req.ID, config, mode, botModel, req.BotCount)
 	if room == nil {
 		http.Error(w, "Room already exists", http.StatusConflict)
 		return
 	}
 
-	slog.Info("room created", "id", req.ID)
+	slog.Info("room created", "id", req.ID, "mode", mode, "bot_model", botModel)
 	w.WriteHeader(http.StatusCreated)
 }
 

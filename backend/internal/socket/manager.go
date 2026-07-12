@@ -7,22 +7,33 @@ import (
 	"slices"
 	"sync"
 	"time"
+
+	internalbots "zhuch/internal/bots"
+	"zhuch/internal/metrics"
+	"zhuch/internal/telemetry"
 	"zhuch/pkg/engine"
 )
+
+// One producer for the whole server; inert unless KAFKA_BROKERS is set.
+var producer = telemetry.New("live")
 
 type Room struct {
 	ID     string
 	Game   *engine.Game
 	Hub    *Hub
+	Bots   *internalbots.BotSet
 	StopCh chan struct{}
 }
 
-func NewRoom(id string, config engine.GameConfig) *Room {
+// NewRoom builds a room. mode/botModel/botCount configure its BotSet
+// ("ffa"/"" = no bots); see internal/bots.NewBotSet.
+func NewRoom(id string, config engine.GameConfig, mode, botModel string, botCount int) *Room {
 	game := engine.NewGame(config)
 	return &Room{
 		ID:     id,
 		Game:   game,
 		Hub:    NewHub(),
+		Bots:   internalbots.NewBotSet(mode, botCount, botModel),
 		StopCh: make(chan struct{}),
 	}
 }
@@ -40,17 +51,45 @@ func (r *Room) Start() {
 	clients := make(map[*Client]bool)
 	grace := make(map[string]*graceEntry)
 
+	r.Game.OnEvent = func(eventType, actor, target string, pos engine.Vector2) {
+		producer.Emit(telemetry.Event{
+			Room: r.ID, Type: eventType, Actor: actor, Target: target,
+			Pos: &telemetry.Pos{X: pos.X, Y: pos.Y},
+		})
+	}
+
 	ticker := time.NewTicker(time.Second / time.Duration(r.Game.Config.TicksPerSecond))
 	defer ticker.Stop()
 
-	slog.Info("room started", "id", r.ID, "tps", r.Game.Config.TicksPerSecond)
+	slog.Info("room started", "id", r.ID, "tps", r.Game.Config.TicksPerSecond, "mode", r.Bots.Mode)
 
 	for {
 		select {
 		case <-ticker.C:
 			r.drainInputs()
+			// Bots decide and act BEFORE Tick, synchronously on this same
+			// goroutine — no locking needed. Same assumption as
+			// pkg/bots/obs.go's BuildObservation: never call Bots.Act
+			// concurrently with Game.Tick.
+			r.Bots.Act(r.Game, r.Game.CurrentTick)
 			r.Game.Tick()
 			r.broadcastState(clients, grace)
+
+			metrics.TickDuration.WithLabelValues(r.ID).Observe(r.Game.Metrics.TickDuration.Seconds())
+			metrics.Entities.WithLabelValues(r.ID).Set(float64(r.Game.Metrics.EntityCount))
+			metrics.Players.WithLabelValues(r.ID).Set(float64(r.Hub.PlayerCount()))
+			metrics.Bots.WithLabelValues(r.ID).Set(float64(r.Bots.BotCount()))
+
+			// 1Hz position samples per tank (contracts §6).
+			if r.Game.CurrentTick%20 == 0 {
+				for _, t := range r.Game.Tanks() {
+					pos := t.GetPosition()
+					producer.Emit(telemetry.Event{
+						Room: r.ID, Type: "pos_sample", Actor: t.GetID(),
+						Pos: &telemetry.Pos{X: pos.X, Y: pos.Y},
+					})
+				}
+			}
 
 		case client := <-r.Hub.Register:
 			r.registerClient(clients, grace, client)
@@ -64,6 +103,13 @@ func (r *Room) Start() {
 		case <-r.StopCh:
 			for _, e := range grace {
 				e.timer.Stop()
+			}
+			// Kick everyone still connected: the room goroutine is exiting,
+			// so no one is left to process a normal Unregister — close
+			// directly instead (mirrors the pre-refactor Hub.Quit kick).
+			for client := range clients {
+				client.closeOnce()
+				client.Conn.Close()
 			}
 			slog.Info("room stopping", "id", r.ID)
 			return
@@ -117,13 +163,13 @@ func (r *Room) registerClient(clients map[*Client]bool, grace map[string]*graceE
 			client.TankID = entry.tankID
 			slog.Info("client reconnected", "name", client.ClientName, "tank_id", client.TankID)
 		} else {
-			tank := engine.NewTank(client.ClientName, engine.Vector2{X: 100, Y: 100}, &r.Game.Config)
+			tank := engine.NewTank(client.ClientName, r.Game.SafeSpawnPos(), &r.Game.Config)
 			client.TankID = tank.GetID()
 			r.Game.Entities = append(r.Game.Entities, tank)
 			slog.Info("client reconnected, tank gone, new spawn", "name", client.ClientName, "tank_id", client.TankID)
 		}
 	} else {
-		tank := engine.NewTank(client.ClientName, engine.Vector2{X: 100, Y: 100}, &r.Game.Config)
+		tank := engine.NewTank(client.ClientName, r.Game.SafeSpawnPos(), &r.Game.Config)
 		client.TankID = tank.GetID()
 		r.Game.Entities = append(r.Game.Entities, tank)
 		slog.Info("client registered", "name", client.ClientName, "tank_id", client.TankID, "total_clients", len(clients))
@@ -132,10 +178,12 @@ func (r *Room) registerClient(clients map[*Client]bool, grace map[string]*graceE
 	clients[client] = true
 	r.Hub.claimName(client.ClientName)
 
+	// Obstacles are static per room, so this is the only time they're sent.
 	initMsg, _ := json.Marshal(map[string]any{
-		"type":    "init",
-		"tank_id": client.TankID,
-		"config":  r.Game.Config,
+		"type":      "init",
+		"tank_id":   client.TankID,
+		"config":    r.Game.Config,
+		"obstacles": obstaclePayload(r.Game.Arena.Obstacles),
 	})
 	safeSend(client.Send, initMsg)
 }
@@ -238,7 +286,9 @@ func NewManager() *Manager {
 	return &Manager{Rooms: make(map[string]*Room)}
 }
 
-func (m *Manager) CreateRoom(id string, config engine.GameConfig) *Room {
+// CreateRoom builds and starts a new room. mode/botModel/botCount configure
+// its bots ("ffa"/"" botModel/count are ignored -> no bots).
+func (m *Manager) CreateRoom(id string, config engine.GameConfig, mode, botModel string, botCount int) *Room {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -246,8 +296,9 @@ func (m *Manager) CreateRoom(id string, config engine.GameConfig) *Room {
 		return nil
 	}
 
-	room := NewRoom(id, config)
+	room := NewRoom(id, config, mode, botModel, botCount)
 	m.Rooms[id] = room
+	metrics.Rooms.Set(float64(len(m.Rooms)))
 	go room.Start()
 	return room
 }
@@ -259,15 +310,23 @@ func (m *Manager) GetRoom(id string) *Room {
 }
 
 func (m *Manager) ListRooms() []*Room {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return slices.Collect(maps.Values(m.Rooms))
 }
 
-func (m *Manager) RemoveRoom(id string) {
+// RemoveRoom stops the room's tick loop, kicks every connected client and
+// forgets the room. Reports whether the room existed.
+func (m *Manager) RemoveRoom(id string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if room, exists := m.Rooms[id]; exists {
-		close(room.StopCh)
-		delete(m.Rooms, id)
+	room, exists := m.Rooms[id]
+	if !exists {
+		return false
 	}
+	close(room.StopCh)
+	delete(m.Rooms, id)
+	metrics.Rooms.Set(float64(len(m.Rooms)))
+	return true
 }

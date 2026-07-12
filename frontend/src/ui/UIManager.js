@@ -87,6 +87,21 @@ export class UIManager {
                                 </div>
                                 <div class="input-row">
                                     <div class="input-group">
+                                        <label>Mode</label>
+                                        <select id="new-room-mode">
+                                            <option value="ffa">Free For All</option>
+                                            <option value="zombies">Zombies</option>
+                                            <option value="boss">Boss</option>
+                                            <option value="practice">Practice (Bots)</option>
+                                        </select>
+                                    </div>
+                                    <div class="input-group">
+                                        <label>Bots (0 = default)</label>
+                                        <input type="number" id="new-room-bots" value="0" min="0" max="50">
+                                    </div>
+                                </div>
+                                <div class="input-row">
+                                    <div class="input-group">
                                         <label>Map Width</label>
                                         <input type="number" id="cfg-map-width" value="2000">
                                     </div>
@@ -283,7 +298,7 @@ export class UIManager {
       updateRoomList();
     };
 
-    startBtn.onclick = () => {
+    startBtn.onclick = async () => {
       const name = nameInput.value.trim();
       if (!name) {
         this.showError("Please enter a name.");
@@ -291,21 +306,19 @@ export class UIManager {
       }
       localStorage.setItem("zhuch_name", name);
 
+      // Rooms are the unit of play: "Join Game" is a quick-join into the
+      // server's default room; every other room is entered from the Active
+      // Rooms list after being explicitly created via the Create Room modal.
       const selectedRoom = roomSelect.value;
-      let roomID = "default";
       let customURL = null;
 
       if (selectedRoom === "local") {
         customURL = "localhost:8080";
-        roomID = "default";
       } else if (selectedRoom === "custom") {
         customURL = customUrlInput.value.trim();
-        roomID = "default";
-      } else {
-        roomID = selectedRoom;
       }
 
-      this.game.roomController.joinGame(name, roomID, customURL);
+      this.game.roomController.joinGame(name, "default", customURL);
     };
 
     createRoomBtn.onclick = () => {
@@ -419,11 +432,18 @@ export class UIManager {
       else if (roomSelect.value === "custom")
         customURL = customUrlInput.value.trim();
 
+      const mode = document.getElementById("new-room-mode").value;
+      const botCount =
+        parseInt(document.getElementById("new-room-bots").value, 10) || 0;
+
       try {
         const success = await this.game.roomController.createRoom(
           roomID,
           config,
           customURL,
+          mode,
+          null,
+          botCount,
         );
         if (success) {
           createModal.style.display = "none";
@@ -449,14 +469,6 @@ export class UIManager {
 
         const rooms = await this.game.roomController.fetchRooms(customURL);
 
-        // Preserve current selection if it still exists, or default to first
-        const currentVal = roomSelect.value;
-
-        // Clear all except hardcoded options in select
-        while (roomSelect.options.length > 3) {
-          roomSelect.remove(3);
-        }
-
         // Clear panel
         roomsListContainer.innerHTML = "";
 
@@ -464,9 +476,14 @@ export class UIManager {
           roomsListContainer.innerHTML =
             '<div class="rooms-placeholder">No active rooms found</div>';
         } else {
+          const protectedRooms = ["default", "practice"];
           rooms.forEach((room) => {
-            // Dropdown populating
-            if (room.id !== "default") {
+            // Dropdown populating (skip "default", already a static option;
+            // guard against dupes since this reruns every 10s poll).
+            if (
+              room.id !== "default" &&
+              !Array.from(roomSelect.options).some((o) => o.value === room.id)
+            ) {
               const option = document.createElement("option");
               option.value = room.id;
               option.text = room.id;
@@ -476,15 +493,15 @@ export class UIManager {
             // List panel populating
             const item = document.createElement("div");
             item.className = "room-item glass";
-            const tps = room.tps || "??";
-            const players = room.players || 0;
+            const deletable = !protectedRooms.includes(room.id);
 
             item.innerHTML = `
                 <div class="room-info">
                     <div class="room-name">${room.id}</div>
-                    <div class="room-details">${tps} TPS • ${players} players</div>
+                    <div class="room-details">${room.mode || "ffa"} • ${room.players || 0} players • ${room.bots || 0} bots</div>
                 </div>
                 <button class="join-room-small-btn button">Join</button>
+                ${deletable ? '<button class="delete-room-btn button" title="Delete room">✕</button>' : ""}
             `;
 
             item.querySelector(".join-room-small-btn").onclick = () => {
@@ -497,12 +514,21 @@ export class UIManager {
               this.game.roomController.joinGame(name, room.id, customURL);
             };
 
+            const deleteBtn = item.querySelector(".delete-room-btn");
+            if (deleteBtn) {
+              deleteBtn.onclick = async () => {
+                try {
+                  await this.game.roomController.deleteRoom(room.id, customURL);
+                  updateRoomList();
+                } catch (err) {
+                  this.showError(`Failed to delete room: ${err.message}`);
+                }
+              };
+            }
+
             roomsListContainer.appendChild(item);
           });
         }
-
-        // Try to restore selection
-        roomSelect.value = currentVal;
       } catch (err) {
         console.error("Failed to update room list:", err);
       } finally {

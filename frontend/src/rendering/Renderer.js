@@ -15,10 +15,12 @@ export class Renderer {
     this.app.stage.addChild(this.worldContainer);
 
     this.backgroundLayer = new Container();
+    this.obstaclesLayer = new Container();
     this.entitiesLayer = new Container();
     this.effectsLayer = new Container();
 
     this.worldContainer.addChild(this.backgroundLayer);
+    this.worldContainer.addChild(this.obstaclesLayer);
     this.worldContainer.addChild(this.entitiesLayer);
     this.worldContainer.addChild(this.effectsLayer);
 
@@ -80,6 +82,20 @@ export class Renderer {
 
   setPlayerID(id) {
     this.playerID = id;
+  }
+
+  // Obstacles are static per room and sent once in the "init" message, so
+  // they're drawn once here (not entity-manager managed) into a world layer
+  // that scrolls with the camera like any entity.
+  setObstacles(obstacles) {
+    this.obstaclesLayer.removeChildren();
+    const graphics = new Graphics();
+    for (const o of obstacles) {
+      graphics.circle(o.x, o.y, o.radius);
+      graphics.fill({ color: 0x333333, alpha: 1 });
+      graphics.stroke({ color: 0x555555, width: 2, alpha: 1 });
+    }
+    this.obstaclesLayer.addChild(graphics);
   }
 
   processStateUpdate(entities, metrics) {

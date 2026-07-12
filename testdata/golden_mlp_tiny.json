@@ -1,0 +1,18 @@
+{
+ "sizes": [
+  3,
+  4,
+  2
+ ],
+ "sha256": "3f2ade49e0c4c5118a2b825076d6dc5e7cc69426def64d571a5f2c3c45757bff",
+ "weights_b64": "GT0hOi31GD7MWwy+1P3jvpzKaL6M3P2+I1n2PCyMKz9+Any+cdeevpTMej7luTY+beNXPScz7r6FoW+8ZP+xPjkPLL+dTGq+RFtzv5MPJb/5vWu/u7vwvbA7Ir8p4wo+W4OgPdNqv70=",
+ "input": [
+  -2.5167596340179443,
+  -0.5386928915977478,
+  -0.048500943928956985
+ ],
+ "expected_output": [
+  -0.15361303368014145,
+  0.21360799302232802
+ ]
+}

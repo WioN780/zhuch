@@ -1,0 +1,13 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored.
+
+cloudflare_account_id = "0123456789abcdef0123456789abcdef"
+cloudflare_api_token  = "cf-api-token-with-r2-edit"
+
+railway_token          = "railway-account-or-workspace-token"
+railway_project_id     = "00000000-0000-0000-0000-000000000000"
+railway_environment_id = "00000000-0000-0000-0000-000000000000"
+railway_service_id     = "00000000-0000-0000-0000-000000000000"
+railway_service_name   = "zhuch-server"
+
+# project_name = "zhuch"
+# environment  = "production"

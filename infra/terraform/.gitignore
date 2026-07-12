@@ -1,0 +1,15 @@
+# State (contains secrets in plaintext)
+*.tfstate
+*.tfstate.*
+
+# Variable files with real credentials
+*.tfvars
+!*.tfvars.example
+
+# Working dirs / logs
+.terraform/
+crash.log
+crash.*.log
+
+# Plan files
+*.tfplan

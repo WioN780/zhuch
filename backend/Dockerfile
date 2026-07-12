@@ -11,6 +11,10 @@ FROM alpine:3.21
 RUN addgroup -S app && adduser -S app -G app
 WORKDIR /app
 COPY --from=builder /app/server .
+# Bot brains: the spawner loads models/<name>.json relative to CWD and falls
+# back to the scripted bot (with only a log warning) when missing — without
+# this line production bots silently lose the evolved genome.
+COPY --from=builder /app/models ./models
 USER app
 EXPOSE 8080
 CMD ["./server"]

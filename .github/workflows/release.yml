@@ -1,0 +1,75 @@
+name: Release
+
+# Builds and pushes the server + arena images to GHCR on every v* tag,
+# or on demand via the Actions UI (workflow_dispatch tags the images with
+# the branch name instead of a version).
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      # Secret-gated Railway deploy: secrets are not directly usable in step
+      # `if:` expressions, so the documented pattern is to map the secret into
+      # env here and test the env var in the step condition below.
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # GHCR image names must be lowercase; the repo owner may not be.
+      - name: Compute lowercase owner
+        id: owner
+        run: echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push server image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.owner.outputs.owner }}/zhuch-server:${{ github.ref_name }}
+            ghcr.io/${{ steps.owner.outputs.owner }}/zhuch-server:latest
+
+      # ASSUMPTION: the arena ships as a separate backend/Dockerfile.arena
+      # (not a --target stage inside backend/Dockerfile). If the parallel
+      # workstream lands it as a target instead, replace `file:` with
+      # `target: arena` on backend/Dockerfile.
+      - name: Build and push arena image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile.arena
+          push: true
+          tags: |
+            ghcr.io/${{ steps.owner.outputs.owner }}/zhuch-arena:${{ github.ref_name }}
+            ghcr.io/${{ steps.owner.outputs.owner }}/zhuch-arena:latest
+
+      # Optional Railway deploy of the game server. Runs only when the
+      # RAILWAY_TOKEN secret is configured; a fork or a repo without Railway
+      # simply skips it. Requires a Railway project token and an existing
+      # service named "zhuch-server" (Railway builds backend/Dockerfile
+      # itself from the uploaded source).
+      - name: Deploy game server to Railway
+        if: ${{ env.RAILWAY_TOKEN != '' }}
+        working-directory: backend
+        run: |
+          npm install -g @railway/cli
+          railway up --service zhuch-server --detach
+
+      - name: Railway deploy skipped
+        if: ${{ env.RAILWAY_TOKEN == '' }}
+        run: echo "RAILWAY_TOKEN secret not set - skipping deploy step."

@@ -112,6 +112,8 @@ func (g *Game) CheckAllCollisions(arena *Arena) {
 		{-1, -1}, {-1, 1}, {1, -1}, {1, 1},
 	}
 
+	// Sequential on purpose: pairs (A,B) and (B,C) both mutate B, so
+	// per-entity goroutines were a data race. Determinism needs order too.
 	for _, c1 := range all {
 		if c1.IsStatic() {
 			continue

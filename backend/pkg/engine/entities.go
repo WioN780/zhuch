@@ -11,6 +11,7 @@ type Entity interface {
 	// Game Logic
 	IsAlive() bool
 	GetHealth() float64
+	GetMaxHealth() float64
 	SetHealth(h float64)
 	GetBodyDamage() float64
 
@@ -36,11 +37,27 @@ type BaseEntity struct {
 	BodyDamage       float64
 	TicksSinceAction int
 	LastAttackerID   string
+	// Self is the outer concrete entity (Tank/Bullet/Food), set by each
+	// constructor. Go embedding gives no virtual dispatch: a plain
+	// b.CollisionAction(ent) call from here would always resolve to
+	// BaseEntity's own method, silently skipping Tank/Bullet/Food
+	// overrides. Self lets OnCollision call through the Entity interface
+	// so those overrides actually run.
+	// json:"-": Self points back at the entity itself; these structs are
+	// marshaled to clients every tick and a naive encode would recurse
+	// forever.
+	Self Entity `json:"-"`
 }
 
 func (b *BaseEntity) OnCollision(other Collidable, normal Vector2, overlap float64) {
 	b.MovingCollidable.OnCollision(other, normal, overlap)
-	if ent, ok := other.(Entity); ok {
+	ent, ok := other.(Entity)
+	if !ok {
+		return
+	}
+	if b.Self != nil {
+		b.Self.CollisionAction(ent)
+	} else {
 		b.CollisionAction(ent)
 	}
 }
@@ -59,6 +76,7 @@ func (b *BaseEntity) CollisionAction(other Entity) {
 
 func (b *BaseEntity) IsAlive() bool               { return b.Health > 0 }
 func (b *BaseEntity) GetHealth() float64          { return b.Health }
+func (b *BaseEntity) GetMaxHealth() float64       { return b.MaxHealth }
 func (b *BaseEntity) SetHealth(h float64)         { b.Health = h }
 func (b *BaseEntity) GetBodyDamage() float64      { return b.BodyDamage }
 func (b *BaseEntity) ResetActionTimer()           { b.TicksSinceAction = 0 }
@@ -83,12 +101,18 @@ type Tank struct {
 	FireCooldown      int
 	LastFireTick      int
 	ViewRange         float64
+	IsBot             bool `json:"is_bot"`
+
+	// Accuracy stats (raw counters; weighting/miss-rate lives in Python).
+	ShotsFired int `json:"shots_fired"`
+	HitsTank   int `json:"hits_tank"`
+	HitsFood   int `json:"hits_food"`
 }
 
 var _ Entity = (*Tank)(nil)
 
 func NewTank(name string, startV Vector2, config *GameConfig) *Tank {
-	return &Tank{
+	t := &Tank{
 		BaseEntity: BaseEntity{
 			MovingCollidable: MovingCollidable{
 				ID:     uuid.New().String(),
@@ -113,6 +137,8 @@ func NewTank(name string, startV Vector2, config *GameConfig) *Tank {
 		FireCooldown:      config.TankFireCooldown,
 		ViewRange:         config.ViewRange,
 	}
+	t.Self = t
+	return t
 }
 
 func (t *Tank) TickCalculation(friction float64) {
@@ -135,7 +161,20 @@ func (t *Tank) TickCalculation(friction float64) {
 	t.TicksSinceAction++
 }
 
-func (t *Tank) CollisionAction(other Entity) { t.BaseEntity.CollisionAction(other) }
+func (t *Tank) CollisionAction(other Entity) {
+	if b, ok := other.(*Bullet); ok {
+		// Own bullet (e.g. after an obstacle ricochet): no damage and no
+		// attribution — mirrors the owner guard in Bullet.CollisionAction.
+		if b.OwnerID == t.ID {
+			return
+		}
+		// Accuracy attribution: a bullet just damaged this tank.
+		if b.Owner != nil {
+			b.Owner.HitsTank++
+		}
+	}
+	t.BaseEntity.CollisionAction(other)
+}
 
 func (t *Tank) Fire(orientation float64, currentTick int) *Bullet {
 	if currentTick-t.LastFireTick < t.FireCooldown {
@@ -143,6 +182,7 @@ func (t *Tank) Fire(orientation float64, currentTick int) *Bullet {
 	}
 
 	t.LastFireTick = currentTick
+	t.ShotsFired++
 	pos := t.GetPosition()
 	radius := t.Config.TankRadius
 	if circ, ok := t.Object.(*Circle); ok {
@@ -169,7 +209,9 @@ func (t *Tank) Fire(orientation float64, currentTick int) *Bullet {
 	offset := radius + bulletRadius + 1.0
 	spawnPos := Vector2{X: pos.X + dirX*offset, Y: pos.Y + dirY*offset}
 
-	return NewBullet(t.ID, spawnPos, bulletVelX, bulletVelY, bulletWeight, bulletRadius, bulletDamage, t.Config.BulletLifespan)
+	b := NewBullet(t.ID, spawnPos, bulletVelX, bulletVelY, bulletWeight, bulletRadius, bulletDamage, t.Config.BulletLifespan)
+	b.Owner = t
+	return b
 }
 
 // -------- BULLET --------
@@ -177,12 +219,16 @@ type Bullet struct {
 	BaseEntity
 	LifespanTicks int
 	OwnerID       string
+	// Owner is the firing tank, used for accuracy-stat attribution
+	// (contracts §accuracy). Never marshaled: bullets are serialized to
+	// clients every tick and a *Tank pointer must not go over the wire.
+	Owner *Tank `json:"-"`
 }
 
 var _ Entity = (*Bullet)(nil)
 
 func NewBullet(ownerID string, startV Vector2, dirX, dirY, weight, radius, damage float64, lifespan int) *Bullet {
-	return &Bullet{
+	b := &Bullet{
 		BaseEntity: BaseEntity{
 			MovingCollidable: MovingCollidable{
 				ID:     uuid.New().String(),
@@ -197,6 +243,8 @@ func NewBullet(ownerID string, startV Vector2, dirX, dirY, weight, radius, damag
 		LifespanTicks: lifespan,
 		OwnerID:       ownerID,
 	}
+	b.Self = b
+	return b
 }
 
 func (b *Bullet) CollisionAction(other Entity) {
@@ -205,6 +253,17 @@ func (b *Bullet) CollisionAction(other Entity) {
 	}
 	b.BaseEntity.CollisionAction(other)
 	b.Health = 0
+}
+
+// OnCollision overrides BaseEntity's so bullets also die on static obstacles
+// (not Entities, so CollisionAction never sees them). Without this a bullet
+// ricochets off rocks and can fly back into its owner; an obstacle hit is a
+// miss, so the bullet ends there.
+func (b *Bullet) OnCollision(other Collidable, normal Vector2, overlap float64) {
+	b.BaseEntity.OnCollision(other, normal, overlap)
+	if _, isEntity := other.(Entity); !isEntity {
+		b.Health = 0
+	}
 }
 
 func (b *Bullet) TickCalculation(friction float64) {
@@ -242,7 +301,7 @@ func NewFood(config FoodConfig, fType FoodType, pos Vector2) *Food {
 	case FoodPentagon:
 		obj = &Pentagon{Center: pos, Size: config.Size}
 	}
-	return &Food{
+	f := &Food{
 		BaseEntity: BaseEntity{
 			MovingCollidable: MovingCollidable{
 				ID:     uuid.New().String(),
@@ -256,6 +315,8 @@ func NewFood(config FoodConfig, fType FoodType, pos Vector2) *Food {
 		Type:       fType,
 		ScoreValue: config.ScoreValue,
 	}
+	f.Self = f
+	return f
 }
 
 func (f *Food) TickCalculation(friction float64) {
@@ -263,4 +324,9 @@ func (f *Food) TickCalculation(friction float64) {
 	f.Vel = f.Vel.Scale(friction)
 }
 
-func (f *Food) CollisionAction(other Entity) { f.BaseEntity.CollisionAction(other) }
+func (f *Food) CollisionAction(other Entity) {
+	f.BaseEntity.CollisionAction(other)
+	if b, ok := other.(*Bullet); ok && b.Owner != nil {
+		b.Owner.HitsFood++
+	}
+}

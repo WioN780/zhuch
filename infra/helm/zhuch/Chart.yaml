@@ -1,0 +1,6 @@
+apiVersion: v2
+name: zhuch
+description: Scale-out for the zhuch training arena (headless eval pods, optional trainer Job, optional in-cluster MLflow)
+type: application
+version: 0.1.0
+appVersion: "1.0"
