@@ -41,3 +41,7 @@ logs/
 .cache/
 .parcel-cache/
 .turbo/
+
+# Internal docs stay local; only docs/README.md is public
+docs/*
+!docs/README.md

@@ -4,6 +4,8 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+
+	"zhuch/internal/metrics"
 	"zhuch/internal/socket"
 	"zhuch/pkg/engine"
 )
@@ -32,7 +34,11 @@ func main() {
 	slog.SetDefault(logger)
 
 	manager := socket.NewManager()
-	manager.CreateRoom("default", engine.DefaultConfig())
+
+	// Default rooms at startup: a plain FFA room, and a practice room so the
+	// demo always has bots to play against without needing /create first.
+	manager.CreateRoom("default", engine.DefaultConfig(), "ffa", "champion", 0)
+	manager.CreateRoom("practice", engine.DefaultConfig(), "practice", "champion", 0)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -44,7 +50,9 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/rooms", ctrl.HandleListRooms)
 	mux.HandleFunc("/create", ctrl.HandleCreate)
+	mux.HandleFunc("/delete", ctrl.HandleDelete)
 	mux.HandleFunc("/ws", ctrl.HandleWebSocket)
+	mux.Handle("/metrics", metrics.Handler())
 
 	addr := "0.0.0.0:" + port
 	slog.Info("server starting", "addr", addr)

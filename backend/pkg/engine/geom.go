@@ -282,6 +282,9 @@ func genericIntersects(a, b GeomObject) (bool, Vector2, float64) {
 	return true, Vector2{X: dx / dist, Y: dy / dist}, radiusSum - dist
 }
 
+// BoundingRadius exposes the physics bounding radius (used by pkg/bots observations).
+func BoundingRadius(obj GeomObject) float64 { return getBoundingRadius(obj) }
+
 func getBoundingRadius(obj GeomObject) float64 {
 	switch shape := obj.(type) {
 	case *Circle:

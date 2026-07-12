@@ -1,6 +1,9 @@
 package socket
 
-import "sync"
+import (
+	"sync"
+	"zhuch/pkg/engine"
+)
 
 // InputEvent carries a player's input to the room goroutine via a channel.
 type InputEvent struct {
@@ -55,4 +58,16 @@ func (h *Hub) releaseName(name string) {
 	h.namesMu.Lock()
 	delete(h.names, name)
 	h.namesMu.Unlock()
+}
+
+// obstaclePayload flattens Arena.Obstacles to the wire shape for the init
+// message: [{"x":..,"y":..,"radius":..}]. Only circle obstacles exist today.
+func obstaclePayload(obstacles []engine.GeomObject) []map[string]float64 {
+	out := make([]map[string]float64, 0, len(obstacles))
+	for _, obs := range obstacles {
+		if c, ok := obs.(*engine.Circle); ok {
+			out = append(out, map[string]float64{"x": c.Center.X, "y": c.Center.Y, "radius": c.Radius})
+		}
+	}
+	return out
 }

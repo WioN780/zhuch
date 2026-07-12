@@ -73,13 +73,11 @@ export class Socket {
           url += (url.includes("?") ? "&" : "?") + `room=${roomID}`;
         }
       } else {
-        const backendURL =
-          import.meta.env.VITE_BACKEND_URL ||
-          (import.meta.env.DEV
-            ? "http://localhost:8080"
-            : "https://zhuch-production.up.railway.app");
-        const wsURL = backendURL.replace(/^http/, "ws");
-        url = `${wsURL}/ws?room=${roomID}`;
+        // VITE_BACKEND_URL is baked in at build time (set per-Railway-service,
+        // not hardcoded here). Falls back to the local dev server.
+        const backend = import.meta.env.VITE_BACKEND_URL || "localhost:8080";
+        const proto = backend.includes("localhost") ? "ws" : "wss";
+        url = `${proto}://${backend}/ws?room=${roomID}`;
       }
 
       console.log("Connecting to WebSocket:", url);
@@ -213,6 +211,9 @@ export class Socket {
       this.nameRetries = 0;
       this.game.renderer.setPlayerID(data.tank_id);
       this.game.applyServerConfig(data.config);
+      if (Array.isArray(data.obstacles)) {
+        this.game.renderer.setObstacles(data.obstacles);
+      }
       return;
     }
 

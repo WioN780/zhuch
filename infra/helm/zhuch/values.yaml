@@ -1,0 +1,97 @@
+# zhuch training-arena chart. See infra/k8s.md for the k3d quickstart and
+# scaling benchmark procedure.
+
+image:
+  arena:
+    repository: ghcr.io/wion780/zhuch-arena
+    tag: latest
+    pullPolicy: IfNotPresent
+  server:
+    repository: ghcr.io/wion780/zhuch-server
+    tag: latest
+    pullPolicy: IfNotPresent
+
+# Headless eval fleet (backend/Dockerfile.arena, contracts §4). Stateless —
+# no volumes, any pod can serve any /eval or /eval_batch request.
+arena:
+  replicas: 4
+  port: 8081
+  resources:
+    requests:
+      cpu: 500m
+      memory: 256Mi
+    limits:
+      cpu: "2"
+      memory: 512Mi
+  # future work: HorizontalPodAutoscaler once a metrics source (metrics-server
+  # for CPU, or a Prometheus adapter for arena_inflight_evals) is wired into
+  # the target cluster. Not implemented — no hpa.yaml template exists yet.
+  # Field kept here so the name is stable when it lands.
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 80
+
+# The WebSocket game server (backend/Dockerfile). Off by default: Railway
+# serves prod (infra/terraform/railway.tf). Enable only for local/in-cluster
+# smoke testing.
+server:
+  enabled: false
+  port: 8080
+  resources:
+    requests:
+      cpu: 250m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 256Mi
+
+# Neuroevolution trainer (training/scripts/train.py). Off by default — run it
+# with `helm install ... --set trainer.enabled=true` or a values override.
+# --arena-urls is built automatically: the in-cluster arena Service URL,
+# repeated arenaUrlCount times (default: arena.replicas). A single ClusterIP
+# Service load-balances per-request across all arena pods, so repeating the
+# same URL is sufficient to fan the trainer's concurrent requests out across
+# the fleet — see infra/k8s.md for why this beats a headless Service here.
+trainer:
+  enabled: false
+  image:
+    repository: ghcr.io/wion780/zhuch-trainer
+    tag: latest
+    pullPolicy: IfNotPresent
+  command: ["python", "scripts/train.py"]
+  algo: ga
+  generations: 100
+  arenaUrlCount: 0 # 0 = default to arena.replicas
+  extraArgs: [] # e.g. ["--pop=256", "--sigma=0.05", "--seed=1"]
+  mlflowTrackingUri: "" # e.g. http://RELEASE-zhuch-mlflow:5000 if mlflow.enabled, or your host compose MLflow
+  backoffLimit: 0
+  restartPolicy: Never
+  resources:
+    requests:
+      cpu: "1"
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 1Gi
+
+# Optional in-cluster MLflow for trainer runs that live entirely in the
+# cluster. This is NOT the infra/compose/docker-compose.yml stack — that one
+# has real (postgres + minio) persistence and stays the source of truth for
+# local dev. This is sqlite + local-disk artifacts, no PVC: throwaway
+# tracking that's lost on pod restart. Point trainer.mlflowTrackingUri at the
+# compose stack instead if you need runs to survive.
+mlflow:
+  enabled: false
+  image:
+    repository: ghcr.io/mlflow/mlflow
+    tag: v3.1.0
+  port: 5000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi

@@ -1,0 +1,53 @@
+{{- if .Values.server.enabled }}
+# Off by default — Railway serves prod (infra/terraform/railway.tf). This is
+# for local/in-cluster smoke testing only, so no readiness probe: the game
+# server exposes /rooms, /create, /ws but no /healthz today.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "zhuch.server.fullname" . }}
+  labels:
+    {{- include "zhuch.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "zhuch.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      labels:
+        {{- include "zhuch.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: server
+    spec:
+      containers:
+        - name: server
+          image: "{{ .Values.image.server.repository }}:{{ .Values.image.server.tag }}"
+          imagePullPolicy: {{ .Values.image.server.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.server.port }}
+          env:
+            - name: PORT
+              value: {{ .Values.server.port | quote }}
+          resources:
+            {{- toYaml .Values.server.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "zhuch.server.fullname" . }}
+  labels:
+    {{- include "zhuch.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "zhuch.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+  ports:
+    - name: http
+      port: {{ .Values.server.port }}
+      targetPort: http
+{{- end }}

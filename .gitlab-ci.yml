@@ -1,0 +1,85 @@
+# Pipeline for the GitLab mirror of this repo (see docs/gitlab-mirror.md).
+# Tests only - releases and deploys happen on GitHub
+# (.github/workflows/release.yml). No secrets required.
+
+stages: [test, integration]
+
+variables:
+  GOMODCACHE: $CI_PROJECT_DIR/.cache/go-mod
+  PIP_CACHE_DIR: $CI_PROJECT_DIR/.cache/pip
+
+go-test:
+  stage: test
+  image: golang:1.26
+  cache:
+    key: go-mod
+    paths: [.cache/go-mod]
+  script:
+    - cd backend
+    - unformatted="$(gofmt -l .)"; if [ -n "$unformatted" ]; then echo "gofmt needed on:"; echo "$unformatted"; exit 1; fi
+    - go vet ./...
+    - go test -race ./...
+
+python-test:
+  stage: test
+  image: python:3.13
+  cache:
+    key: pip
+    paths: [.cache/pip]
+  script:
+    - cd training
+    - pip install -e '.[dev]'
+    # tests/test_parity.py auto-skips here (no ARENA_URL set)
+    - pytest --junitxml=../pytest-report.xml
+  artifacts:
+    when: always
+    reports:
+      junit: pytest-report.xml
+
+build-arena:
+  stage: test
+  image: golang:1.26
+  cache:
+    key: go-mod
+    paths: [.cache/go-mod]
+  script:
+    - cd backend
+    # static binary so it runs inside the python:3.13 image in the parity job
+    - CGO_ENABLED=0 go build -o arena ./cmd/arena
+  artifacts:
+    paths: [backend/arena]
+    expire_in: 1 hour
+
+# Genuine Go <-> Python parity gate: real arena binary vs the Python
+# reference implementation, via POST /forward (docs/contracts.md section 4).
+parity:
+  stage: integration
+  image: python:3.13
+  needs: [go-test, python-test, build-arena]
+  cache:
+    key: pip
+    paths: [.cache/pip]
+  script:
+    # ponytail: assumes arena honors PORT env (Railway convention);
+    # switch to its addr flag if the binary grows one.
+    - PORT=8081 ./backend/arena > arena.log 2>&1 &
+    - pip install -e './training[dev]'
+    - |
+      for i in $(seq 1 30); do
+        curl -fsS http://127.0.0.1:8081/healthz && break
+        sleep 1
+      done
+      curl -fsS http://127.0.0.1:8081/healthz || { echo "arena never became healthy"; cat arena.log; exit 1; }
+    - cd training
+    - ARENA_URL=http://127.0.0.1:8081 pytest tests/test_parity.py -v --junitxml=../parity-report.xml
+    - cd ..
+    # Smoke /eval with two scripted tanks (request shape: contracts.md section 4).
+    - |
+      curl -fsS -X POST http://127.0.0.1:8081/eval \
+        -H 'Content-Type: application/json' \
+        -d '{"seed": 42, "max_ticks": 600, "tanks": [{"name": "s1", "scripted": true}, {"name": "s2", "scripted": true}]}'
+  artifacts:
+    when: always
+    reports:
+      junit: parity-report.xml
+    paths: [arena.log]

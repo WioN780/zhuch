@@ -1,0 +1,42 @@
+{{- if .Values.trainer.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "zhuch.fullname" . }}-trainer
+  labels:
+    {{- include "zhuch.labels" . | nindent 4 }}
+    app.kubernetes.io/component: trainer
+spec:
+  backoffLimit: {{ .Values.trainer.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        {{- include "zhuch.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: trainer
+    spec:
+      restartPolicy: {{ .Values.trainer.restartPolicy }}
+      containers:
+        - name: trainer
+          image: "{{ .Values.trainer.image.repository }}:{{ .Values.trainer.image.tag }}"
+          imagePullPolicy: {{ .Values.trainer.image.pullPolicy }}
+          command: {{ .Values.trainer.command | toJson }}
+          args:
+            - --algo={{ .Values.trainer.algo }}
+            - --generations={{ .Values.trainer.generations }}
+            - --arena-urls
+            {{- $count := .Values.trainer.arenaUrlCount | default .Values.arena.replicas }}
+            {{- $url := printf "http://%s:%v" (include "zhuch.arena.fullname" .) .Values.arena.port }}
+            {{- range until (int $count) }}
+            - {{ $url }}
+            {{- end }}
+            {{- range .Values.trainer.extraArgs }}
+            - {{ . }}
+            {{- end }}
+          {{- if .Values.trainer.mlflowTrackingUri }}
+          env:
+            - name: MLFLOW_TRACKING_URI
+              value: {{ .Values.trainer.mlflowTrackingUri | quote }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.trainer.resources | nindent 12 }}
+{{- end }}

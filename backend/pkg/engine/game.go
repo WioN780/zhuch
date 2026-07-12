@@ -2,6 +2,8 @@ package engine
 
 import (
 	"math/rand"
+	"strconv"
+	"sync"
 	"time"
 )
 
@@ -13,6 +15,7 @@ type GameConfig struct {
 	MapHeight      float64 `json:"map_height"`
 	CellSize       float64 `json:"cell_size"`
 	MaxFood        int     `json:"max_food"`
+	ObstacleCount  int     `json:"obstacle_count"`
 
 	// Tank Defaults
 	TankRadius       float64 `json:"tank_radius"`
@@ -52,10 +55,11 @@ func DefaultConfig() GameConfig {
 	return GameConfig{
 		TicksPerSecond: 20,
 		Friction:       0.9,
-		MapWidth:       2000,
-		MapHeight:      2000,
+		MapWidth:       4000,
+		MapHeight:      4000,
 		CellSize:       100,
-		MaxFood:        50,
+		MaxFood:        120,
+		ObstacleCount:  12,
 
 		TankRadius:       20.0,
 		TankMaxHealth:    100.0,
@@ -95,19 +99,131 @@ type Game struct {
 	Config      GameConfig
 	Arena       *Arena
 	Entities    []Entity
+	Rng         *rand.Rand
+	mu          sync.Mutex
 	IsActive    bool
 	CurrentTick int
 	Metrics     PerformanceMetrics
+	nextID      int
+
+	// OnEvent, when set, is called for engine events ("kill", "death") while
+	// g.mu is held: handlers must be fast, non-blocking, and must not call
+	// back into Game. Used by the telemetry producers.
+	OnEvent func(eventType, actor, target string, pos Vector2)
 }
 
 // NewGame acts as the factory for the room
 func NewGame(config GameConfig) *Game {
-	return &Game{
+	return NewGameSeeded(config, time.Now().UnixNano())
+}
+
+// NewGameSeeded creates a game whose randomness (food spawns, etc.) is
+// fully determined by seed, so seeded games replay identically.
+func NewGameSeeded(config GameConfig, seed int64) *Game {
+	g := &Game{
 		Config:   config,
 		Arena:    NewArena(config.MapWidth, config.MapHeight),
 		Entities: make([]Entity, 0),
+		Rng:      rand.New(rand.NewSource(seed)),
 		IsActive: false,
 	}
+	g.generateObstacles()
+	return g
+}
+
+// generateObstacles seeds Arena.Obstacles deterministically from g.Rng:
+// circle radius 60-140, positioned with a 250-unit margin from the walls,
+// reject-and-retry (max 20 tries) on overlap with an already-placed
+// obstacle so they don't fuse into each other.
+func (g *Game) generateObstacles() {
+	const margin, minR, maxR = 250.0, 60.0, 140.0
+	for i := 0; i < g.Config.ObstacleCount; i++ {
+		for try := 0; try < 20; try++ {
+			r := minR + g.Rng.Float64()*(maxR-minR)
+			c := &Circle{
+				Center: Vector2{
+					X: margin + g.Rng.Float64()*(g.Config.MapWidth-2*margin),
+					Y: margin + g.Rng.Float64()*(g.Config.MapHeight-2*margin),
+				},
+				Radius: r,
+			}
+			if !obstacleOverlaps(g.Arena.Obstacles, c) {
+				g.Arena.Obstacles = append(g.Arena.Obstacles, c)
+				break
+			}
+		}
+	}
+}
+
+func obstacleOverlaps(existing []GeomObject, c *Circle) bool {
+	for _, obs := range existing {
+		if oc, ok := obs.(*Circle); ok {
+			rr := oc.Radius + c.Radius
+			if oc.Center.DistanceSquaredTo(c.Center) < rr*rr {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// insideObstacle reports whether pos lands inside any obstacle, padded by
+// slack, so spawn logic can avoid embedding entities in one.
+func (g *Game) insideObstacle(pos Vector2, slack float64) bool {
+	for _, obs := range g.Arena.Obstacles {
+		if c, ok := obs.(*Circle); ok {
+			r := c.Radius + slack
+			if pos.DistanceSquaredTo(c.Center) <= r*r {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// SafeSpawnPos returns a random spawn position with a 100-unit wall margin,
+// retrying (max 10 tries) any position that lands inside an obstacle (40-unit
+// slack) so tanks don't spawn embedded in one. Used by both the live hub
+// (Hub.Register) and the arena's default/random spawn.
+func (g *Game) SafeSpawnPos() Vector2 {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	const margin = 100.0
+	pos := Vector2{
+		X: margin + g.Rng.Float64()*(g.Config.MapWidth-2*margin),
+		Y: margin + g.Rng.Float64()*(g.Config.MapHeight-2*margin),
+	}
+	for try := 0; try < 10 && g.insideObstacle(pos, 40.0); try++ {
+		pos = Vector2{
+			X: margin + g.Rng.Float64()*(g.Config.MapWidth-2*margin),
+			Y: margin + g.Rng.Float64()*(g.Config.MapHeight-2*margin),
+		}
+	}
+	return pos
+}
+
+// newID returns a deterministic per-game entity ID. Caller must hold g.mu.
+// Collision pair-dedup and kill attribution compare IDs, so seeded replays
+// need IDs that don't depend on uuid randomness.
+func (g *Game) newID(prefix string) string {
+	g.nextID++
+	return prefix + "-" + strconv.Itoa(g.nextID)
+}
+
+// SpawnTank assigns a deterministic ID and appends the tank under g.mu.
+func (g *Game) SpawnTank(t *Tank) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	t.ID = g.newID("tank")
+	g.Entities = append(g.Entities, t)
+}
+
+// SpawnBullet assigns a deterministic ID and appends the bullet under g.mu.
+func (g *Game) SpawnBullet(b *Bullet) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	b.ID = g.newID("bullet")
+	g.Entities = append(g.Entities, b)
 }
 
 // Tick executes exactly one frame of game logic
@@ -157,6 +273,31 @@ func (g *Game) Tick() {
 	g.Metrics.EntityCount = len(g.Entities)
 }
 
+// Tanks returns a snapshot of the currently alive tanks.
+func (g *Game) Tanks() []*Tank {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	tanks := make([]*Tank, 0, 8)
+	for _, e := range g.Entities {
+		if t, ok := e.(*Tank); ok {
+			tanks = append(tanks, t)
+		}
+	}
+	return tanks
+}
+
+// HasEntity reports whether an entity with the given ID is currently alive.
+func (g *Game) HasEntity(id string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for _, e := range g.Entities {
+		if e.GetID() == id {
+			return true
+		}
+	}
+	return false
+}
+
 func (g *Game) GetVisibleEntities(pos Vector2, viewRange float64) []Entity {
 	visible := make([]Entity, 0)
 	rangeSq := viewRange * viewRange
@@ -170,10 +311,13 @@ func (g *Game) GetVisibleEntities(pos Vector2, viewRange float64) []Entity {
 }
 
 func (g *Game) spawnRandomFood() {
-	x := rand.Float64() * g.Config.MapWidth
-	y := rand.Float64() * g.Config.MapHeight
+	pos := Vector2{X: g.Rng.Float64() * g.Config.MapWidth, Y: g.Rng.Float64() * g.Config.MapHeight}
+	for try := 0; try < 10 && g.insideObstacle(pos, 40.0); try++ {
+		pos = Vector2{X: g.Rng.Float64() * g.Config.MapWidth, Y: g.Rng.Float64() * g.Config.MapHeight}
+	}
+	x, y := pos.X, pos.Y
 
-	roll := rand.Float64()
+	roll := g.Rng.Float64()
 	var fType FoodType
 	if roll < 0.6 {
 		fType = FoodSquare
@@ -184,11 +328,17 @@ func (g *Game) spawnRandomFood() {
 	}
 
 	food := NewFood(g.Config.FoodConfigs[fType], fType, Vector2{X: x, Y: y})
+	food.ID = g.newID("food") // spawnRandomFood runs under g.mu (inside Tick)
 	g.Entities = append(g.Entities, food)
 }
 
 func (g *Game) processDeath(victim Entity) {
 	attackerID := victim.GetLastAttackerID()
+
+	if g.OnEvent != nil {
+		g.OnEvent("death", victim.GetID(), attackerID, victim.GetPosition())
+	}
+
 	if attackerID == "" {
 		return
 	}
@@ -206,6 +356,10 @@ func (g *Game) processDeath(victim Entity) {
 
 	if killer == nil {
 		return
+	}
+
+	if g.OnEvent != nil {
+		g.OnEvent("kill", killer.GetID(), victim.GetID(), victim.GetPosition())
 	}
 
 	// Award based on victim type

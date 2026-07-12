@@ -7,19 +7,11 @@ export class RoomController {
      * Get the base URL based on the user's selection
      */
     getBaseURL(customURL = null) {
-        if (customURL) {
-            let url = customURL;
-            if (!url.startsWith("http")) {
-                url = url.includes("localhost") ? `http://${url}` : `https://${url}`;
-            }
-            return url;
+        let url = customURL || import.meta.env.VITE_BACKEND_URL || "localhost:8080";
+        if (!url.startsWith("http")) {
+            url = url.includes("localhost") ? `http://${url}` : `https://${url}`;
         }
-        return (
-            import.meta.env.VITE_BACKEND_URL ||
-            (import.meta.env.DEV
-                ? "http://localhost:8080"
-                : "https://zhuch-production.up.railway.app")
-        );
+        return url;
     }
 
     /**
@@ -39,15 +31,37 @@ export class RoomController {
 
     /**
      * API: Create a new room
+     * mode: "ffa" | "zombies" | "boss" | "practice" (optional, server defaults to "ffa")
      */
-    async createRoom(roomID, config, customURL = null) {
+    async createRoom(roomID, config, customURL = null, mode = null, botModel = null, botCount = null) {
         const baseURL = this.getBaseURL(customURL);
+        const body = { id: roomID, config };
+        if (mode) body.mode = mode;
+        if (botModel) body.bot_model = botModel;
+        if (botCount) body.bot_count = botCount;
         const response = await fetch(`${baseURL}/create`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: roomID, config })
+            body: JSON.stringify(body)
         });
 
+        if (!response.ok) {
+            const msg = await response.text();
+            throw new Error(msg);
+        }
+        return true;
+    }
+
+    /**
+     * API: Delete a room (built-in rooms are protected server-side)
+     */
+    async deleteRoom(roomID, customURL = null) {
+        const baseURL = this.getBaseURL(customURL);
+        const response = await fetch(`${baseURL}/delete`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: roomID })
+        });
         if (!response.ok) {
             const msg = await response.text();
             throw new Error(msg);
