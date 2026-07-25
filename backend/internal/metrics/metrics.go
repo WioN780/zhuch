@@ -39,6 +39,21 @@ var (
 		Help: "Current active room count.",
 	})
 
+	Kills = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "zhuch_kills_total",
+		Help: "Total tank kills.",
+	}, []string{"room"})
+
+	Deaths = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "zhuch_deaths_total",
+		Help: "Total tank deaths.",
+	}, []string{"room"})
+
+	WSDisconnects = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "zhuch_ws_disconnects_total",
+		Help: "Total client websocket disconnects.",
+	}, []string{"room"})
+
 	// Arena metrics (contracts §8), no labels.
 	ArenaEpisodes = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "arena_episodes_total",
@@ -59,12 +74,17 @@ var (
 		Name: "arena_inflight_evals",
 		Help: "Evaluation episodes currently running.",
 	})
+
+	ArenaEvalErrors = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "arena_eval_errors_total",
+		Help: "Total /eval and /eval_batch requests that returned an error.",
+	})
 )
 
 func init() {
 	prometheus.MustRegister(
-		TickDuration, Entities, Players, Bots, Rooms,
-		ArenaEpisodes, ArenaEpisodeDuration, ArenaTicks, ArenaInflightEvals,
+		TickDuration, Entities, Players, Bots, Rooms, Kills, Deaths, WSDisconnects,
+		ArenaEpisodes, ArenaEpisodeDuration, ArenaTicks, ArenaInflightEvals, ArenaEvalErrors,
 	)
 }
 
