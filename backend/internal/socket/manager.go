@@ -52,6 +52,12 @@ func (r *Room) Start() {
 	grace := make(map[string]*graceEntry)
 
 	r.Game.OnEvent = func(eventType, actor, target string, pos engine.Vector2) {
+		switch eventType {
+		case "kill":
+			metrics.Kills.WithLabelValues(r.ID).Inc()
+		case "death":
+			metrics.Deaths.WithLabelValues(r.ID).Inc()
+		}
 		producer.Emit(telemetry.Event{
 			Room: r.ID, Type: eventType, Actor: actor, Target: target,
 			Pos: &telemetry.Pos{X: pos.X, Y: pos.Y},
@@ -195,6 +201,7 @@ func (r *Room) unregisterClient(clients map[*Client]bool, grace map[string]*grac
 	delete(clients, client)
 	r.Hub.releaseName(client.ClientName)
 	client.closeOnce()
+	metrics.WSDisconnects.WithLabelValues(r.ID).Inc()
 
 	// Zero input so the tank coasts to a stop during the grace window.
 	for _, e := range r.Game.Entities {
