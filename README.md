@@ -1,7 +1,7 @@
 # Zhuch
 
 A multiplayer [Diep.io](https://diep.io)-style tank arena where the bots are neural
-networks, bred (not scripted) through evolutionary algorithms and evaluated in a
+networks, bred through evolutionary algorithms and evaluated in a
 headless Go arena, with a full MLOps loop (experiment tracking, telemetry, and
 promotion gates) behind them.
 
@@ -13,7 +13,7 @@ promotion gates) behind them.
 
 ## What's here
 
-- A real-time multiplayer game server and WebGL client — playable on its own.
+- A real-time multiplayer game server and WebGL client, playable on its own.
 - Bots driven by small MLPs (90 in → 64 → 64 → 5 out) instead of hand-tuned
   heuristics, trained with a Genetic Algorithm and OpenAI-ES against a
   deterministic, headless physics arena.
@@ -29,7 +29,7 @@ promotion gates) behind them.
 |---|---|
 | Game server & headless arena | Go, [gorilla/websocket](https://github.com/gorilla/websocket), custom 2D physics engine, [franz-go](https://github.com/twmb/franz-go) (Kafka), [Prometheus client](https://github.com/prometheus/client_golang) |
 | Game client | JavaScript, [Pixi.js](https://pixijs.com/) (WebGL), Vite |
-| Bot training | Python, NumPy — Genetic Algorithm + OpenAI-ES neuroevolution, MLflow tracking |
+| Bot training | Python, NumPy, Genetic Algorithm + OpenAI-ES neuroevolution, MLflow tracking |
 | Telemetry & analytics | Kafka (Redpanda), Spark, Parquet, Prometheus, Grafana |
 | Model/artifact storage | MinIO (S3-compatible), Postgres (MLflow backend store) |
 | Infra as code | Docker Compose (local stack), Helm (k8s scale-out), Terraform (Railway + Cloudflare R2) |
@@ -38,31 +38,32 @@ promotion gates) behind them.
 
 ## Repository layout
 
-- **[`backend/`](backend)** — Go.
-  - `cmd/server` — the real-time WebSocket room coordinator (port 8080) that
+- **[`backend/`](backend)**: Go.
+  - `cmd/server`: the real-time WebSocket room coordinator (port 8080) that
     serves actual multiplayer games.
-  - `cmd/arena` — a headless, fast-forward simulator (port 8081) used for
+  - `cmd/arena`: a headless, fast-forward simulator (port 8081) used for
     training evaluation and Go↔Python physics/observation parity checks.
-  - `pkg/engine` — deterministic 2D physics: tanks, bullets, food, obstacles,
+  - `pkg/engine`: deterministic 2D physics: tanks, bullets, food, obstacles,
     collisions.
-  - `pkg/bots` — builds the observation vector fed to trained models and
+  - `pkg/bots`: builds the observation vector fed to trained models and
     applies their output; falls back to a frozen scripted policy if no
     trained model is present.
-  - `models/` — the bot weight files the server loads (see
+  - `models/`: the bot weight files the server loads (see
     [`backend/models/README.md`](backend/models/README.md) for the format).
-- **[`frontend/`](frontend)** — the WebGL game client (Pixi.js + Vite, port 5173).
-- **[`training/`](training)** — the Python neuroevolution framework
+- **[`frontend/`](frontend)**: the WebGL game client (Pixi.js + Vite, port 5173).
+- **[`training/`](training)**: the Python neuroevolution framework
   (`zhuch_train/`: genome format, GA/ES, fitness, arena client) plus
   `scripts/train.py` and `scripts/promote.py`.
-- **[`analytics/`](analytics)** — Kafka → Parquet → Spark pipeline for match
+- **[`analytics/`](analytics)**: Kafka → Parquet → Spark pipeline for match
   telemetry.
-- **[`infra/`](infra)** — `compose/` (local Postgres/MinIO/MLflow/
+- **[`infra/`](infra)**: `compose/` (local Postgres/MinIO/MLflow/
   Prometheus/Grafana/Redpanda stack), `helm/` (k8s scale-out chart),
   `terraform/` (Railway + R2), `airflow/` (scheduled analytics DAGs).
 
 Internal working docs (contracts, runbooks, blog drafts) are kept out of the
-public repo — see [`docs/README.md`](docs/README.md) for why, and pointers to
-the architecture docs that *are* public (the `README.md` files linked above).
+public repo. See [`docs/README.md`](docs/README.md) for why, and for pointers
+to the architecture docs that *are* public (the `README.md` files linked
+above).
 
 ## Local development quickstart
 
@@ -139,9 +140,9 @@ GitLab CI pipeline for redundancy).
 The demo at https://zhuch.markooba.com runs two Railway services built from
 this repo:
 
-- **backend** — `backend/Dockerfile`, the WebSocket game server (bundles
+- **backend**: `backend/Dockerfile`, the WebSocket game server (bundles
   `backend/models/champion.json` so bots work with no extra setup).
-- **frontend** — static Vite build; `VITE_BACKEND_URL` (a Railway service
+- **frontend**: static Vite build; `VITE_BACKEND_URL` (a Railway service
   variable, e.g. `backend-production-xxxx.up.railway.app`) is baked into the
   bundle at build time so the client knows which backend to talk to. Without
   it, the built client defaults to `localhost:8080`.

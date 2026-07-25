@@ -139,6 +139,61 @@
         { "refId": "A", "expr": "zhuch_players", "legendFormat": "players {{room}}" },
         { "refId": "B", "expr": "zhuch_bots", "legendFormat": "bots {{room}}" }
       ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Kills / deaths per min",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 18 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        { "refId": "A", "expr": "sum by (room) (rate(zhuch_kills_total[1m])) * 60", "legendFormat": "kills {{room}}" },
+        { "refId": "B", "expr": "sum by (room) (rate(zhuch_deaths_total[1m])) * 60", "legendFormat": "deaths {{room}}" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "WS disconnects per min",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 18 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        { "refId": "A", "expr": "sum by (room) (rate(zhuch_ws_disconnects_total[1m])) * 60", "legendFormat": "{{room}}" }
+      ]
     }
   ]
 }

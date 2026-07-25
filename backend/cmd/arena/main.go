@@ -63,7 +63,12 @@ type EvalResponse struct {
 
 // runEpisode plays one full-speed headless episode. tanks[0] is the
 // candidate: the episode ends when it dies or at max_ticks.
-func runEpisode(req EvalRequest) (*EvalResponse, error) {
+func runEpisode(req EvalRequest) (resp *EvalResponse, err error) {
+	defer func() {
+		if err != nil {
+			metrics.ArenaEvalErrors.Inc()
+		}
+	}()
 	if len(req.Tanks) == 0 {
 		return nil, errors.New("tanks required")
 	}
@@ -157,7 +162,7 @@ func runEpisode(req EvalRequest) (*EvalResponse, error) {
 		}
 	}
 
-	resp := &EvalResponse{Ticks: g.CurrentTick, Tanks: make([]TankResult, n)}
+	resp = &EvalResponse{Ticks: g.CurrentTick, Tanks: make([]TankResult, n)}
 	for i, t := range tanks {
 		resp.Tanks[i] = TankResult{
 			Name:       req.Tanks[i].Name,
